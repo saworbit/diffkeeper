@@ -1,0 +1,36 @@
+# Demo: Postgres with DiffKeeper
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /build
+COPY go.mod go.sum main.go ./
+RUN go mod download && \
+    CGO_ENABLED=0 go build -ldflags="-w -s" -o diffkeeper .
+
+# Final image with Postgres
+FROM postgres:16-alpine
+
+# Copy DiffKeeper agent
+COPY --from=builder /build/diffkeeper /usr/local/bin/diffkeeper
+
+# Create delta storage directory
+RUN mkdir -p /deltas
+
+# Set environment variables
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=password
+ENV POSTGRES_DB=testdb
+ENV PGDATA=/var/lib/postgresql/data
+
+# Wrapper script to start DiffKeeper + Postgres
+RUN echo '#!/bin/sh' > /entrypoint-wrapper.sh && \
+    echo 'exec /usr/local/bin/diffkeeper \' >> /entrypoint-wrapper.sh && \
+    echo '  --state-dir=/var/lib/postgresql/data \' >> /entrypoint-wrapper.sh && \
+    echo '  --store=/deltas/postgres.bolt \' >> /entrypoint-wrapper.sh && \
+    echo '  -- docker-entrypoint.sh postgres "$@"' >> /entrypoint-wrapper.sh && \
+    chmod +x /entrypoint-wrapper.sh
+
+ENTRYPOINT ["/entrypoint-wrapper.sh"]
+CMD []
+
+# Volume for delta storage (small!)
+VOLUME /deltas

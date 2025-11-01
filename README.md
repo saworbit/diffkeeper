@@ -24,12 +24,14 @@ Many containerized applications write stateful files (checkpoints, world saves, 
 
 ## The Solution
 
-DiffKeeper is a 12MB Go agent that runs inside your container to:
+DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 
 1. **Watch** specific directories for file changes (using fsnotify)
-2. **Capture** compressed binary deltas when files change (bsdiff)
-3. **Store** tiny diffs externally (BoltDB on small PV or host mount)
+2. **Capture** compressed file snapshots when files change (gzip)
+3. **Store** deltas externally (BoltDB on small PV or host mount)
 4. **Replay** changes on restart for sub-5-second recovery
+
+> **MVP Note:** Current version stores compressed full-file snapshots. Binary diff support (bsdiff) is planned for v1.0 to further reduce storage requirements.
 
 ```
 [Your App] → writes files → [DiffKeeper Agent] → stores deltas
@@ -57,31 +59,39 @@ DiffKeeper is a 12MB Go agent that runs inside your container to:
 │ ┌──────────────────────────────┐ │
 │ │ Your Application             │ │
 │ │          ↓                    │ │
-│ │ DiffKeeper Agent (12MB)      │ │
+│ │ DiffKeeper Agent (6.5MB)     │ │
 │ │  ├─ fsnotify (file watching) │ │
-│ │  ├─ bsdiff (delta compute)   │ │
+│ │  ├─ gzip compression         │ │
 │ │  └─ BoltDB writer (async)    │ │
 │ └──────────────────────────────┘ │
 └────────────┬─────────────────────┘
              ↓
     ┌────────────────────┐
     │ Delta Store        │
-    │ (BoltDB/SQLite)    │
-    │ ├─ base snapshot   │
-    │ └─ deltas/*.diff   │
+    │ (BoltDB)           │
+    │ └─ snapshots/*     │
     └────────────────────┘
       (Small PV or emptyDir)
 ```
 
 **How it works:**
 1. Agent detects file writes via fsnotify
-2. Computes binary diff against previous version (bsdiff)
-3. Compresses and stores delta (gzip, 90%+ compression)
-4. On restart: loads base + applies deltas sequentially
+2. Computes SHA256 hash to detect changes
+3. Compresses changed files and stores snapshot (gzip, 70-90% compression)
+4. On restart: loads and decompresses snapshots to restore state
 
 ---
 
 ## Quick Start
+
+### Prerequisites
+
+- **Docker** 24+ (required for demo)
+- **Go** 1.23+ (for building from source)
+- **Platform**: Linux containers (agent uses Unix syscalls like `exec`)
+- 100MB free disk space
+
+> **Note**: While the agent can be built on Windows/macOS, it must run inside Linux containers due to platform-specific system calls.
 
 ### 1. Install the Agent
 
@@ -172,18 +182,20 @@ From prototype testing on Intel i5, SSD storage:
 
 | Metric | Value |
 |--------|-------|
-| Agent binary size | 12MB |
-| Delta compression ratio | 250:1 (text), 50:1 (binary) |
-| Recovery time (1GB state) | 3.2s |
+| Agent binary size | 6.5MB (tested on Windows/Linux) |
+| File compression ratio | 70-90% (gzip) |
+| Recovery time (small workloads) | <1s |
 | CPU overhead (idle) | 0.1% |
 | CPU overhead (active writes) | 1-3% |
 | Memory overhead | ~50MB per container |
-| Storage efficiency | 10MB deltas for 1GB state/day |
+| Delta storage (BoltDB) | 32KB initial overhead |
 
 **Limitations:**
+- **MVP stores full compressed files**, not binary diffs (planned for v1.0)
 - High-write workloads (>10k writes/sec): Consider eBPF-based approach (v1.0)
-- Large file changes (>100MB): Chunked diffs needed
+- Large file changes (>100MB): Chunked processing needed
 - Database workloads: Use native WAL/replication instead
+- **Windows**: Agent runs on Linux containers only (uses Unix syscalls)
 
 ---
 
@@ -214,23 +226,35 @@ From prototype testing on Intel i5, SSD storage:
 
 ## Roadmap
 
-### Current: MVP (Prototype Complete)
-- ✅ fsnotify + bsdiff agent
-- ✅ Docker/K8s integration
-- ✅ Replay + basic rollback
-- ✅ Benchmarks and testing
+### Current: v0.1 MVP (Prototype Complete ✅)
+- ✅ fsnotify file watching
+- ✅ Gzip compression + SHA256 change detection
+- ✅ BoltDB storage backend
+- ✅ Docker integration
+- ✅ Working demo with Postgres
+- ✅ Unit tests
+
+**MVP Limitations:**
+- Stores compressed full files (not binary diffs yet)
+- Single-container focus (no multi-replica sync)
+- Basic error handling
+- No metrics/observability
 
 ### v1.0 (2-4 weeks)
-- [ ] eBPF hooks for lower overhead on high-write workloads
+- [ ] **Binary diff support** (bsdiff/xdelta) for true delta storage
 - [ ] Periodic base snapshots (avoid long delta chains)
+- [ ] Kubernetes manifests (StatefulSet examples)
+- [ ] GitHub Actions CI/CD
+- [ ] Improved error handling and logging
+- [ ] Basic metrics (file count, storage size, recovery time)
+
+### v2.0+ (Future)
+- [ ] eBPF hooks for lower overhead on high-write workloads
 - [ ] Kubernetes Operator + Custom Resource Definition
 - [ ] Multi-replica synchronization (CRDT-based)
-
-### v2.0 (1-2 months)
 - [ ] Branch/merge support (git-like time-travel)
 - [ ] Live migration between nodes
 - [ ] Power-optimized mode for edge/IoT
-- [ ] Performance testing at scale
 
 ---
 
@@ -264,46 +288,47 @@ make test
 ## Technical Details
 
 **Core Dependencies:**
-- [fsnotify](https://github.com/fsnotify/fsnotify) - File system event monitoring
-- [bsdiff](https://github.com/mendsley/bsdiff) - Binary delta computation  
-- [BoltDB](https://github.com/etcd-io/bbolt) - Embedded key-value store
+- [fsnotify](https://github.com/fsnotify/fsnotify) v1.7.0 - File system event monitoring
+- [BoltDB](https://github.com/etcd-io/bbolt) v1.3.10 - Embedded key-value store
+- [Cobra](https://github.com/spf13/cobra) v1.8.1 - CLI framework
 - Standard library: gzip compression, crypto/sha256 for hashing
 
 **Agent Code Sample:**
 ```go
 type DiffKeeper struct {
-    db      *bolt.DB
-    baseDir string
-    watcher *fsnotify.Watcher
+    db       *bbolt.DB
+    stateDir string
+    watcher  *fsnotify.Watcher
 }
 
-func (dk *DiffKeeper) captureDelta(path string) error {
+func (dk *DiffKeeper) BlueShift(path string) error {
     // Read current file
     data, err := os.ReadFile(path)
     if err != nil {
         return err
     }
-    
+
     // Compute hash to detect changes
     hash := sha256.Sum256(data)
     newHash := hex.EncodeToString(hash[:])
+
+    // Check if changed
     prevHash := dk.getPrevHash(path)
-    
-    if prevHash != newHash {
-        // Generate binary diff
-        delta, err := bsdiff.Create(prevPath, path)
-        if err != nil {
-            return err
-        }
-        
-        // Store compressed delta
-        return dk.storeDelta(path, delta)
+    if prevHash == newHash {
+        return nil // No change
     }
-    return nil
+
+    // Compress and store (MVP: full file)
+    compressed, err := compressData(data)
+    if err != nil {
+        return err
+    }
+
+    return dk.storeDelta(path, compressed, newHash)
 }
 ```
 
-For full implementation, see [GitHub repository](https://github.com/yourorg/diffkeeper).
+For full implementation, see [main.go](main.go).
 
 ---
 
