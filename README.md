@@ -6,6 +6,8 @@
 [![Status: Prototype](https://img.shields.io/badge/Status-Prototype-yellow.svg)]()
 
 **Updated:** November 1, 2025
+**Author:** Shane Anthony Wall
+**Contact:** shaneawall@gmail.com
 
 ---
 
@@ -97,11 +99,11 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 
 ```bash
 # Download binary
-curl -sSL https://github.com/yourorg/diffkeeper/releases/latest/download/agent-linux-amd64 -o diffkeeper
+curl -sSL https://github.com/saworbit/diffkeeper/releases/latest/download/agent-linux-amd64 -o diffkeeper
 chmod +x diffkeeper
 
 # Or build from source
-go install github.com/yourorg/diffkeeper/cmd/agent@latest
+go install github.com/saworbit/diffkeeper/cmd/agent@latest
 ```
 
 ### 2. Docker Usage
@@ -131,7 +133,7 @@ metadata:
 spec:
   initContainers:
   - name: replay-state
-    image: yourorg/diffkeeper:latest
+    image: saworbit/diffkeeper:latest
     command: ["/replay", "--state-dir=/data", "--store=/deltas/db.bolt"]
     volumeMounts:
     - name: delta-storage
@@ -273,15 +275,15 @@ We're looking for collaborators to move this from prototype to production-ready!
 
 **Development setup:**
 ```bash
-git clone https://github.com/yourorg/diffkeeper
+git clone https://github.com/saworbit/diffkeeper
 cd diffkeeper
 make build
 make test
 ```
 
 **Discussion:**
-- Issues: [GitHub Issues](https://github.com/yourorg/diffkeeper/issues)
-- Email: contribute@diffkeeper.io
+- Issues: [GitHub Issues](https://github.com/saworbit/diffkeeper/issues)
+- Email: shaneawall@gmail.com
 
 ---
 
@@ -349,4 +351,8 @@ Apache License 2.0 - See [LICENSE](LICENSE) for details.
 
 **DiffKeeper makes stateful containers practical without the complexity of persistent volumes.**
 
-Try it: `go get github.com/yourorg/diffkeeper` 🚀
+Try it: `go get github.com/saworbit/diffkeeper` 🚀
+
+---
+
+**Maintainer:** Shane Anthony Wall (shaneawall@gmail.com)

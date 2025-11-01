@@ -2,6 +2,8 @@
 
 Complete file layout for the MVP implementation.
 
+**Author:** Shane Anthony Wall | **Contact:** shaneawall@gmail.com
+
 ```
 diffkeeper/
 ├── README.md                    # Main documentation (your updated version)
@@ -64,7 +66,7 @@ diffkeeper/
 
 **go.mod**
 ```go
-module github.com/yourorg/diffkeeper
+module github.com/saworbit/diffkeeper
 go 1.23
 require (
     github.com/fsnotify/fsnotify v1.7.0
@@ -163,7 +165,7 @@ git commit -m "Initial commit: DiffKeeper MVP v0.1"
 ### 2. Create GitHub Repository
 
 ```bash
-gh repo create yourorg/diffkeeper --public --source=. --remote=origin
+gh repo create saworbit/diffkeeper --public --source=. --remote=origin
 git push -u origin main
 ```
 
@@ -234,6 +236,8 @@ See [ROADMAP.md](ROADMAP.md) for full v1.0 plan.
 
 ## Questions?
 
-- Issues: https://github.com/yourorg/diffkeeper/issues
-- Discussions: https://github.com/yourorg/diffkeeper/discussions
-- Email: dev@diffkeeper.io
+- Issues: https://github.com/saworbit/diffkeeper/issues
+- Discussions: https://github.com/saworbit/diffkeeper/discussions
+- Email: shaneawall@gmail.com
+
+**Maintainer:** Shane Anthony Wall

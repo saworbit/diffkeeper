@@ -2,6 +2,8 @@
 
 Get DiffKeeper running in under 5 minutes!
 
+**Author:** Shane Anthony Wall | **Contact:** shaneawall@gmail.com
+
 ## Prerequisites
 
 - Docker 24+ installed
@@ -14,7 +16,7 @@ This runs a complete end-to-end test with Postgres:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourorg/diffkeeper
+git clone https://github.com/saworbit/diffkeeper
 cd diffkeeper
 
 # Run the full demo
@@ -168,8 +170,8 @@ DiffKeeper watches files with fsnotify. If you have >10k file changes/second, co
 
 - **Production use**: Review [ARCHITECTURE.md](ARCHITECTURE.md) for tuning
 - **Contribute**: See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
-- **Report issues**: [GitHub Issues](https://github.com/yourorg/diffkeeper/issues)
-- **Ask questions**: discussions@diffkeeper.io
+- **Report issues**: [GitHub Issues](https://github.com/saworbit/diffkeeper/issues)
+- **Ask questions**: shaneawall@gmail.com
 
 ## Performance Expectations
 
@@ -195,4 +197,6 @@ docker volume rm diffkeeper-deltas
 
 ---
 
-**Questions?** Open an issue or email: support@diffkeeper.io
+**Questions?** Open an issue or email: shaneawall@gmail.com
+
+**Maintainer:** Shane Anthony Wall

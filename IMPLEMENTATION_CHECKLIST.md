@@ -2,13 +2,15 @@
 
 Use this checklist to track your progress building the MVP.
 
+**Author:** Shane Anthony Wall | **Contact:** shaneawall@gmail.com
+
 ## Week 1: Core Implementation (40-50 hours)
 
 ### Day 1: Project Setup & Core Agent (8 hours) ✅ COMPLETE
 
 - [x] **Project initialization (1h)**
   - [x] Create directory: `mkdir diffkeeper && cd diffkeeper`
-  - [x] Initialize module: `go mod init github.com/yourorg/diffkeeper`
+  - [x] Initialize module: `go mod init github.com/saworbit/diffkeeper`
   - [x] Copy `go.mod` from artifacts
   - [x] Run `go mod download` and `go mod tidy`
   - [x] Create `.gitignore`
