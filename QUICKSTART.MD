@@ -29,11 +29,11 @@ make demo
 3. Creates test data (3 users in a table)
 4. **Kills the container** (simulating crash/eviction)
 5. Restarts the container
-6. **Verifies data survived** ✅
+6. **Verifies data survived** [OK]
 
 Expected output:
-```
-✅✅✅ SUCCESS! Data survived the nuke! ✅✅✅
+```text
+[OK] SUCCESS! Data survived the nuke!
 ```
 
 ## Option 2: Use DiffKeeper with Your Own App
@@ -99,12 +99,12 @@ kubectl exec -it postgres-with-diffkeeper-0 -- \
 
 When DiffKeeper runs, you'll see logs like:
 
-```
-🔴 RedShift: Restoring state from deltas...
-✅ RedShift complete: restored 42 files in 1.2s
-👁️  Watching /data for changes...
-🔵 BlueShift: captured config.json (3.45 KB compressed)
-🔵 BlueShift: captured world.db (125.67 KB compressed)
+```text
+[RedShift] Restoring state from deltas...
+[RedShift] Restored 42 files in 1.2s
+[Watcher] Watching /data for changes...
+[BlueShift] Captured config.json (3.45 KB compressed)
+[BlueShift] Captured world.db (125.67 KB compressed)
 ```
 
 ## Common Use Cases
@@ -168,8 +168,8 @@ DiffKeeper watches files with fsnotify. If you have >10k file changes/second, co
 
 ## Next Steps
 
-- **Production use**: Review [ARCHITECTURE.md](ARCHITECTURE.md) for tuning
-- **Contribute**: See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
+- **Production use**: Review [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) and [K8S_TESTING_GUIDE.md](K8S_TESTING_GUIDE.md) for deployment patterns and operational tips.
+- **Contribute**: Check [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) for open work items and priorities.
 - **Report issues**: [GitHub Issues](https://github.com/saworbit/diffkeeper/issues)
 - **Ask questions**: shaneawall@gmail.com
 
@@ -200,3 +200,8 @@ docker volume rm diffkeeper-deltas
 **Questions?** Open an issue or email: shaneawall@gmail.com
 
 **Maintainer:** Shane Anthony Wall
+
+
+
+
+

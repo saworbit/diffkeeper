@@ -6,61 +6,47 @@ Complete file layout for the MVP implementation.
 
 ```
 diffkeeper/
-├── README.md                    # Main documentation (your updated version)
-├── QUICKSTART.md               # Getting started guide
-├── LICENSE                     # Apache 2.0
-├── .gitignore                  # Git ignore rules
-├── go.mod                      # Go module definition
-├── go.sum                      # Dependency checksums (auto-generated)
-│
-├── main.go                     # Core agent implementation
-├── main_test.go               # Unit tests
-│
-├── Dockerfile                  # Base DiffKeeper image
-├── Dockerfile.postgres         # Postgres demo image
-├── demo.sh                     # E2E demo script (executable)
-├── Makefile                    # Build automation
-│
-├── k8s-statefulset.yaml       # Kubernetes example
-│
-├── .github/
-│   └── workflows/
-│       └── ci.yml             # GitHub Actions CI pipeline
-│
-├── bin/                        # Build output (gitignored)
-│   ├── diffkeeper             # Native binary
-│   └── diffkeeper-linux-amd64 # Linux binary
-│
-├── docs/                       # Additional documentation
-│   ├── ARCHITECTURE.md        # Technical deep dive
-│   ├── CONTRIBUTING.md        # Contribution guidelines
-│   └── PERFORMANCE.md         # Benchmarks and tuning
-│
-└── examples/                   # Example integrations
-    ├── minecraft/
-    │   └── Dockerfile
-    ├── nginx/
-    │   └── Dockerfile
-    └── redis/
-        └── Dockerfile
+|-- README.md
+|-- QUICKSTART.MD
+|-- PROJECT_STRUCTURE.md
+|-- IMPLEMENTATION_CHECKLIST.md
+|-- K8S_TESTING_GUIDE.md
+|-- main.go
+|-- main_test.go
+|-- Dockerfile
+|-- Dockerfile.postgres
+|-- demo.sh
+|-- Makefile
+|-- k8s-statefulset.yaml
+|-- go.mod
+|-- go.sum
+|-- .gitignore
+|-- coverage.out
+|-- .github/
+|   |-- workflows/
+|       |-- ci.yml
+|-- bin/                # build output (gitignored)
+|-- test-data/          # sample input fixtures
+|-- test-deltas/        # sample delta output
+|-- .claude/            # local editor settings (ignored)
 ```
+
 
 ## File Descriptions
 
 ### Core Files
 
-**main.go** (400 lines)
-- `DiffKeeper` struct - Main agent
-- `RedShift()` - State restoration
-- `BlueShift()` - Delta capture
-- `WatchLoop()` - fsnotify integration
-- `compressData()` / `decompressData()` - Gzip helpers
+**main.go** (~320 lines)
+- `DiffKeeper` struct - core agent wiring (BoltDB + fsnotify)
+- `addWatchRecursive()` - attaches watchers to nested directories on every platform
+- `RedShift()` - restores files from stored deltas
+- `BlueShift()` - captures updates with compression and hashing
+- Cobra CLI with `--debug` flag and process hand-off via `syscall.Exec`
 
-**main_test.go** (250 lines)
-- Unit tests for compression
-- Lifecycle tests (create, capture, restore)
-- Multi-file restoration tests
-- Benchmarks for BlueShift/RedShift
+**main_test.go** (~900 lines)
+- Unit tests for compression, lifecycle, multi-file restore, and large files
+- Watcher regression coverage (nested directories, permission errors, read-only stores)
+- Benchmarks for BlueShift and RedShift
 
 ### Configuration
 
@@ -82,9 +68,9 @@ require (
 **Makefile** - Build targets:
 - `make build` - Local binary
 - `make test` - Run tests with coverage
-- `make demo` - Full E2E test
-- `make docker` - Build images
-- `make clean` - Remove artifacts
+- `make docker-postgres` - Build the demo Postgres image
+- `make demo` - Run the end-to-end demo (depends on the demo image)
+- `make clean` - Remove build artifacts and demo containers
 
 **Dockerfile** - Multi-stage build:
 1. Builder: Go 1.23 alpine
@@ -145,6 +131,7 @@ coverage.out
 
 # OS
 .DS_Store
+length.txt
 
 # Go
 vendor/
@@ -206,33 +193,24 @@ make test
 # Build binary
 make build
 
-# Quick local test
-make test-local
-
-# Full E2E test
+# Full E2E test (builds demo image automatically)
 make demo
 ```
 
 ### Debugging
 
 ```bash
-# Run with verbose logging
-go run main.go --state-dir=./test-data --store=./test.bolt -- cat test.txt
-
-# Check delta storage
-go run -tags=bolt ./tools/inspect-db.go test.bolt
+# Run with verbose logging against sample data
+go run main.go --debug --state-dir=./test-data --store=./test.bolt -- cat test-data/example.txt
 ```
 
 ## Next Steps for v0.2
 
-Files to add:
-- `cmd/replay/main.go` - Standalone replay tool
-- `internal/diff/bsdiff.go` - True binary diffs
-- `internal/storage/interface.go` - Pluggable backends
-- `pkg/api/client.go` - Go client library
-- `tools/inspect-db.go` - Debug utility
-
-See [ROADMAP.md](ROADMAP.md) for full v1.0 plan.
+Roadmap items live in [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md). Highlights include:
+- Binary diff support for lower storage overhead
+- Pluggable storage backends and remote sinks
+- Standalone replay tooling (`cmd/replay`) for offline restores
+- Additional observability (metrics, debug utilities)
 
 ## Questions?
 
@@ -241,3 +219,5 @@ See [ROADMAP.md](ROADMAP.md) for full v1.0 plan.
 - Email: shaneawall@gmail.com
 
 **Maintainer:** Shane Anthony Wall
+
+

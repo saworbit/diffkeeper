@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Status: Prototype](https://img.shields.io/badge/Status-Prototype-yellow.svg)]()
 
-**Updated:** November 1, 2025
+**Updated:** November 3, 2025
 **Author:** Shane Anthony Wall
 **Contact:** shaneawall@gmail.com
 
@@ -36,13 +36,14 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 > **MVP Note:** Current version stores compressed full-file snapshots. Binary diff support (bsdiff) is planned for v1.0 to further reduce storage requirements.
 
 ```
-[Your App] → writes files → [DiffKeeper Agent] → stores deltas
-                                    ↓
-                            replays on restart
+[Your App] --writes--> [DiffKeeper Agent] --stores--> BoltDB delta files
+                                ^
+                                |
+                         replays on restart
 ```
 
 **Key Benefits:**
-- Store only changes: 1GB state → ~10MB deltas
+- Store only changes: 1GB state -> ~10MB deltas
 - Fast recovery: <5s replay time (p99)
 - Low overhead: <2% CPU in typical workloads
 - Drop-in compatible: Works with Docker, Kubernetes, Podman
@@ -56,24 +57,16 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 ## Architecture
 
 ```
-┌──────────────────────────────────┐
-│ Container                        │
-│ ┌──────────────────────────────┐ │
-│ │ Your Application             │ │
-│ │          ↓                   │ │
-│ │ DiffKeeper Agent (6.5MB)     │ │
-│ │  ├─ fsnotify (file watching) │ │
-│ │  ├─ gzip compression         │ │
-│ │  └─ BoltDB writer (async)    │ │
-│ └──────────────────────────────┘ │
-└────────────┬─────────────────────┘
-             ↓
-    ┌────────────────────┐
-    │ Delta Store        │
-    │ (BoltDB)           │
-    │ └─ snapshots/*     │
-    └────────────────────┘
-      (Small PV or emptyDir)
++-------------------+       writes files        +-----------------------+
+|   Your App        | ------------------------> | DiffKeeper Agent      |
+| (containerized)   |                           | - fsnotify watcher    |
+|                   | <----- restores state ----| - gzip compression    |
++-------------------+                           | - BoltDB persistence  |
+                                                +-----------+-----------+
+                                                            |
+                                                            v
+                                                  BoltDB delta store
+                                              (mounted volume or PVC)
 ```
 
 **How it works:**
@@ -243,13 +236,13 @@ From prototype testing on Intel i5, SSD storage:
 
 ## Roadmap
 
-### Current: v0.1 MVP (Prototype Complete ✅)
-- ✅ fsnotify file watching
-- ✅ Gzip compression + SHA256 change detection
-- ✅ BoltDB storage backend
-- ✅ Docker integration
-- ✅ Working demo with Postgres
-- ✅ Unit tests
+### Current: v0.1 MVP (Prototype Complete )
+-  fsnotify file watching
+-  Gzip compression + SHA256 change detection
+-  BoltDB storage backend
+-  Docker integration
+-  Working demo with Postgres
+-  Unit tests
 
 **MVP Limitations:**
 - Stores compressed full files (not binary diffs yet)
@@ -366,8 +359,11 @@ Apache License 2.0 - See [LICENSE](LICENSE) for details.
 
 **DiffKeeper makes stateful containers practical without the complexity of persistent volumes.**
 
-Try it: `go get github.com/saworbit/diffkeeper` 🚀
+Try it: `go get github.com/saworbit/diffkeeper` 
 
 ---
 
 **Maintainer:** Shane Anthony Wall (shaneawall@gmail.com)
+
+
+
