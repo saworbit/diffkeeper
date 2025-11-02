@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,21 +13,21 @@ import (
 
 func TestCompressDecompress(t *testing.T) {
 	testData := []byte("Hello, DiffKeeper! This is test data that should compress well.")
-	
+
 	compressed, err := compressData(testData)
 	if err != nil {
 		t.Fatalf("Compression failed: %v", err)
 	}
-	
+
 	if len(compressed) >= len(testData) {
 		t.Logf("Warning: Compressed size (%d) >= original size (%d)", len(compressed), len(testData))
 	}
-	
+
 	decompressed, err := decompressData(compressed)
 	if err != nil {
 		t.Fatalf("Decompression failed: %v", err)
 	}
-	
+
 	if string(decompressed) != string(testData) {
 		t.Errorf("Decompressed data doesn't match original.\nExpected: %s\nGot: %s", testData, decompressed)
 	}
@@ -37,63 +38,63 @@ func TestDiffKeeperLifecycle(t *testing.T) {
 	tmpDir := t.TempDir()
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "test.bolt")
-	
+
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
-	
+
 	// Initialize DiffKeeper
 	dk, err := NewDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
 	defer dk.Close()
-	
+
 	// Test file creation and capture
 	testFile := filepath.Join(stateDir, "test.txt")
 	testContent := []byte("Initial content")
-	
+
 	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
-	
+
 	// Capture the file
 	if err := dk.BlueShift(testFile); err != nil {
 		t.Fatalf("BlueShift failed: %v", err)
 	}
-	
+
 	// Modify the file
 	updatedContent := []byte("Updated content")
 	if err := os.WriteFile(testFile, updatedContent, 0644); err != nil {
 		t.Fatalf("Failed to update test file: %v", err)
 	}
-	
+
 	// Capture the update
 	if err := dk.BlueShift(testFile); err != nil {
 		t.Fatalf("BlueShift update failed: %v", err)
 	}
-	
+
 	// Remove the file to simulate loss
 	if err := os.Remove(testFile); err != nil {
 		t.Fatalf("Failed to remove test file: %v", err)
 	}
-	
+
 	// Verify file is gone
 	if _, err := os.Stat(testFile); !os.IsNotExist(err) {
 		t.Fatal("Test file should not exist")
 	}
-	
+
 	// RedShift should restore it
 	if err := dk.RedShift(); err != nil {
 		t.Fatalf("RedShift failed: %v", err)
 	}
-	
+
 	// Verify file was restored with latest content
 	restored, err := os.ReadFile(testFile)
 	if err != nil {
 		t.Fatalf("Failed to read restored file: %v", err)
 	}
-	
+
 	if string(restored) != string(updatedContent) {
 		t.Errorf("Restored content doesn't match.\nExpected: %s\nGot: %s", updatedContent, restored)
 	}
@@ -103,24 +104,24 @@ func TestMultipleFilesRedShift(t *testing.T) {
 	tmpDir := t.TempDir()
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "test.bolt")
-	
+
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
-	
+
 	dk, err := NewDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
 	defer dk.Close()
-	
+
 	// Create multiple test files
 	testFiles := map[string]string{
-		"config.json":  `{"setting": "value"}`,
-		"data.txt":     "Some data content",
+		"config.json":       `{"setting": "value"}`,
+		"data.txt":          "Some data content",
 		"subdir/nested.log": "Nested file content",
 	}
-	
+
 	for path, content := range testFiles {
 		fullPath := filepath.Join(stateDir, path)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -133,7 +134,7 @@ func TestMultipleFilesRedShift(t *testing.T) {
 			t.Fatalf("BlueShift failed for %s: %v", path, err)
 		}
 	}
-	
+
 	// Remove all files
 	if err := os.RemoveAll(stateDir); err != nil {
 		t.Fatalf("Failed to remove state dir: %v", err)
@@ -141,12 +142,12 @@ func TestMultipleFilesRedShift(t *testing.T) {
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatalf("Failed to recreate state dir: %v", err)
 	}
-	
+
 	// Restore all files
 	if err := dk.RedShift(); err != nil {
 		t.Fatalf("RedShift failed: %v", err)
 	}
-	
+
 	// Verify all files were restored
 	for path, expectedContent := range testFiles {
 		fullPath := filepath.Join(stateDir, path)
@@ -165,34 +166,34 @@ func TestNoChangeNoDelta(t *testing.T) {
 	tmpDir := t.TempDir()
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "test.bolt")
-	
+
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
-	
+
 	dk, err := NewDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
 	defer dk.Close()
-	
+
 	testFile := filepath.Join(stateDir, "test.txt")
 	testContent := []byte("Unchanging content")
-	
+
 	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
-	
+
 	// Capture first time
 	if err := dk.BlueShift(testFile); err != nil {
 		t.Fatalf("First BlueShift failed: %v", err)
 	}
-	
+
 	// Capture again without changes - should be no-op
 	if err := dk.BlueShift(testFile); err != nil {
 		t.Fatalf("Second BlueShift failed: %v", err)
 	}
-	
+
 	// Verify only one delta was stored
 	count := 0
 	dk.db.View(func(tx *bbolt.Tx) error {
@@ -203,7 +204,7 @@ func TestNoChangeNoDelta(t *testing.T) {
 		}
 		return nil
 	})
-	
+
 	if count != 1 {
 		t.Errorf("Expected 1 delta, got %d", count)
 	}
@@ -232,10 +233,10 @@ func TestSubdirectoryWatching(t *testing.T) {
 
 	// Create files at different levels
 	testFiles := map[string]string{
-		filepath.Join(stateDir, "root.txt"):                    "Root level file",
-		filepath.Join(stateDir, "level1", "first.txt"):         "First level file",
+		filepath.Join(stateDir, "root.txt"):                       "Root level file",
+		filepath.Join(stateDir, "level1", "first.txt"):            "First level file",
 		filepath.Join(stateDir, "level1", "level2", "second.txt"): "Second level file",
-		filepath.Join(nestedDir, "deep.txt"):                   "Deep nested file",
+		filepath.Join(nestedDir, "deep.txt"):                      "Deep nested file",
 	}
 
 	// Write and capture all files
@@ -403,6 +404,103 @@ func TestPermissionErrors(t *testing.T) {
 	_, err = NewDiffKeeper(stateDir, invalidStorePath)
 	if err == nil {
 		t.Error("Expected error when creating DiffKeeper with invalid store path, got nil")
+	}
+}
+
+func TestWatchLoopCapturesChanges(t *testing.T) {
+	debugEnabled = true
+	defer func() { debugEnabled = false }()
+
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "watch.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	dk, err := NewDiffKeeper(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		if err := dk.WatchLoop(); err != nil {
+			t.Logf("WatchLoop exited with error: %v", err)
+		}
+		close(done)
+	}()
+
+	// Allow watcher setup to complete
+	time.Sleep(150 * time.Millisecond)
+
+	testFile := filepath.Join(stateDir, "watched.txt")
+	if err := os.WriteFile(testFile, []byte("initial"), 0644); err != nil {
+		t.Fatalf("Failed to write watched file: %v", err)
+	}
+
+	// Create nested directory to exercise directory branch (best-effort)
+	nestedDir := filepath.Join(stateDir, "nested")
+	if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		t.Fatalf("Failed to create nested directory: %v", err)
+	}
+	time.Sleep(150 * time.Millisecond)
+
+	_ = os.WriteFile(filepath.Join(nestedDir, "child.txt"), []byte("nested"), 0644)
+
+	// Poll for captured deltas
+	targets := map[string]bool{
+		"watched.txt": false,
+	}
+
+	for i := 0; i < 20; i++ {
+		time.Sleep(100 * time.Millisecond)
+		err := dk.db.View(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte(BucketDeltas))
+			if b == nil {
+				return fmt.Errorf("deltas bucket missing")
+			}
+			return b.ForEach(func(k, v []byte) error {
+				if len(v) == 0 {
+					return nil
+				}
+				if _, ok := targets[string(k)]; ok {
+					targets[string(k)] = true
+				}
+				return nil
+			})
+		})
+		if err != nil {
+			t.Fatalf("DB view failed: %v", err)
+		}
+
+		allCaptured := true
+		for _, v := range targets {
+			if !v {
+				allCaptured = false
+				break
+			}
+		}
+		if allCaptured {
+			break
+		}
+	}
+
+	for path, done := range targets {
+		if !done {
+			t.Fatalf("Watcher did not capture delta for %s", path)
+		}
+	}
+
+	if err := dk.Close(); err != nil {
+		t.Fatalf("Failed to close DiffKeeper: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WatchLoop did not exit after close")
 	}
 }
 
@@ -780,18 +878,18 @@ func BenchmarkBlueShift(b *testing.B) {
 	tmpDir := b.TempDir()
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "bench.bolt")
-	
+
 	os.MkdirAll(stateDir, 0755)
-	
+
 	dk, err := NewDiffKeeper(stateDir, storePath)
 	if err != nil {
 		b.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
 	defer dk.Close()
-	
+
 	testFile := filepath.Join(stateDir, "bench.txt")
 	testContent := []byte("Benchmark content that changes")
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		content := append(testContent, byte(i%256))
@@ -804,15 +902,15 @@ func BenchmarkRedShift(b *testing.B) {
 	tmpDir := b.TempDir()
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "bench.bolt")
-	
+
 	os.MkdirAll(stateDir, 0755)
-	
+
 	dk, err := NewDiffKeeper(stateDir, storePath)
 	if err != nil {
 		b.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
 	defer dk.Close()
-	
+
 	// Create 100 test files
 	for i := 0; i < 100; i++ {
 		testFile := filepath.Join(stateDir, "file_"+string(rune(i))+".txt")
@@ -820,11 +918,97 @@ func BenchmarkRedShift(b *testing.B) {
 		os.WriteFile(testFile, content, 0644)
 		dk.BlueShift(testFile)
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		os.RemoveAll(stateDir)
 		os.MkdirAll(stateDir, 0755)
 		dk.RedShift()
+	}
+}
+
+func TestWatchLoopNestedCaptureWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Nested watcher verification runs only on Windows")
+	}
+
+	prevDebug := debugEnabled
+	debugEnabled = true
+	defer func() { debugEnabled = prevDebug }()
+
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "nested.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	dk, err := NewDiffKeeper(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		if err := dk.WatchLoop(); err != nil {
+			t.Logf("WatchLoop exited with error: %v", err)
+		}
+		close(done)
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+
+	nestedDir := filepath.Join(stateDir, "level1", "level2")
+	if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		t.Fatalf("Failed to create nested directory: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	targetFile := filepath.Join(nestedDir, "nested.txt")
+	if err := os.WriteFile(targetFile, []byte("nested content"), 0644); err != nil {
+		t.Fatalf("Failed to write target file: %v", err)
+	}
+
+	wantKey, err := filepath.Rel(stateDir, targetFile)
+	if err != nil {
+		t.Fatalf("Failed to compute relative path: %v", err)
+	}
+
+	var captured bool
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		err := dk.db.View(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte(BucketDeltas))
+			if b == nil {
+				return fmt.Errorf("deltas bucket missing")
+			}
+			if v := b.Get([]byte(wantKey)); len(v) > 0 {
+				captured = true
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("DB view failed: %v", err)
+		}
+		if captured {
+			break
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+
+	if err := dk.Close(); err != nil {
+		t.Fatalf("Failed to close DiffKeeper: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WatchLoop did not exit after Close")
+	}
+
+	if !captured {
+		t.Fatal("Watcher failed to capture nested directory write on Windows")
 	}
 }

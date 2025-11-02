@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -25,11 +26,52 @@ const (
 	BucketMetadata = "meta"
 )
 
+var debugEnabled bool
+
+func logDebug(format string, args ...interface{}) {
+	if !debugEnabled {
+		return
+	}
+	log.Printf("[DEBUG] "+format, args...)
+}
+
 type DiffKeeper struct {
-	db       *bbolt.DB
-	stateDir string
+	db        *bbolt.DB
+	stateDir  string
 	storePath string
-	watcher  *fsnotify.Watcher
+	watcher   *fsnotify.Watcher
+}
+
+func (dk *DiffKeeper) addWatchRecursive(root string) error {
+	if dk.watcher == nil {
+		return fmt.Errorf("watcher not initialized")
+	}
+
+	// Windows delivers CREATE events only for the top-most directory of a
+	// multi-level os.MkdirAll call. Walking lets us attach watchers to
+	// every new subdirectory before any files are written.
+	info, err := os.Stat(root)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if err := dk.watcher.Add(path); err != nil {
+			log.Printf("[Watcher] Failed to add watch for %s: %v", path, err)
+			return nil
+		}
+		logDebug("[Watcher] Added watch for %s", path)
+		return nil
+	})
 }
 
 func NewDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
@@ -59,10 +101,10 @@ func NewDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
 	}
 
 	return &DiffKeeper{
-		db:       db,
-		stateDir: stateDir,
+		db:        db,
+		stateDir:  stateDir,
 		storePath: storePath,
-		watcher:  watcher,
+		watcher:   watcher,
 	}, nil
 }
 
@@ -78,8 +120,8 @@ func (dk *DiffKeeper) Close() error {
 
 // RedShift: Replay all deltas to restore filesystem state
 func (dk *DiffKeeper) RedShift() error {
-	log.Println("🔴 RedShift: Restoring state from deltas...")
-	
+	log.Println("[RedShift] Restoring state from deltas...")
+
 	startTime := time.Now()
 	count := 0
 
@@ -114,7 +156,7 @@ func (dk *DiffKeeper) RedShift() error {
 	})
 
 	duration := time.Since(startTime)
-	log.Printf("✅ RedShift complete: restored %d files in %v", count, duration)
+	log.Printf("[RedShift] Restored %d files in %v", count, duration)
 	return err
 }
 
@@ -166,25 +208,17 @@ func (dk *DiffKeeper) BlueShift(path string) error {
 	})
 
 	if err == nil {
-		log.Printf("🔵 BlueShift: captured %s (%.2f KB compressed)", relPath, float64(len(compressed))/1024)
+		log.Printf("[BlueShift] Captured %s (%.2f KB compressed)", relPath, float64(len(compressed))/1024)
 	}
 	return err
 }
 
 // Watch filesystem and capture changes
 func (dk *DiffKeeper) WatchLoop() error {
-	log.Printf("👁️  Watching %s for changes...", dk.stateDir)
+	log.Printf("[Watcher] Watching %s for changes...", dk.stateDir)
 
 	// Add initial directory and all subdirectories
-	if err := filepath.Walk(dk.stateDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return dk.watcher.Add(path)
-		}
-		return nil
-	}); err != nil {
+	if err := dk.addWatchRecursive(dk.stateDir); err != nil {
 		return err
 	}
 
@@ -195,31 +229,40 @@ func (dk *DiffKeeper) WatchLoop() error {
 				return nil
 			}
 
-			// Handle file writes and creates
-			if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
-				// Small delay to avoid capturing partial writes
-				time.Sleep(100 * time.Millisecond)
-				
-				info, err := os.Stat(event.Name)
-				if err != nil {
-					continue
-				}
+			logDebug("[Watcher] Event %s for %s", event.Op, event.Name)
 
-				if !info.IsDir() {
-					if err := dk.BlueShift(event.Name); err != nil {
-						log.Printf("Error capturing %s: %v", event.Name, err)
-					}
-				} else {
-					// Watch new directories
-					dk.watcher.Add(event.Name)
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
+				continue
+			}
+
+			// Small delay to avoid capturing partial writes
+			time.Sleep(100 * time.Millisecond)
+
+			info, err := os.Stat(event.Name)
+			if err != nil {
+				logDebug("[Watcher] Skipping %s: %v", event.Name, err)
+				continue
+			}
+
+			// If the target is a directory, attach watchers to it (and its children)
+			// before any subsequent file writes occur. This ensures nested writes on
+			// Windows trigger events even when the directory tree is created in one call.
+			if info.IsDir() {
+				if err := dk.addWatchRecursive(event.Name); err != nil {
+					logDebug("[Watcher] Skipping recursive watch for %s: %v", event.Name, err)
 				}
+				continue
+			}
+
+			if err := dk.BlueShift(event.Name); err != nil {
+				log.Printf("[Watcher] Error capturing %s: %v", event.Name, err)
 			}
 
 		case err, ok := <-dk.watcher.Errors:
 			if !ok {
 				return nil
 			}
-			log.Printf("Watcher error: %v", err)
+			log.Printf("[Watcher] Error: %v", err)
 		}
 	}
 }
@@ -260,6 +303,10 @@ Example:
   diffkeeper --state-dir=/data --store=/deltas/db.bolt -- postgres -D /data`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if debugEnabled {
+				log.Println("[Debug] Verbose logging enabled")
+			}
+
 			// Initialize DiffKeeper
 			dk, err := NewDiffKeeper(stateDir, storePath)
 			if err != nil {
@@ -275,13 +322,13 @@ Example:
 			// Phase 2: Start watching in background
 			go func() {
 				if err := dk.WatchLoop(); err != nil {
-					log.Printf("Watch loop error: %v", err)
+					log.Printf("[Watcher] Loop error: %v", err)
 				}
 			}()
 
 			// Phase 3: Execute the wrapped application
-			log.Printf("🚀 Starting application: %v", args)
-			
+			log.Printf("[Exec] Starting application: %v", args)
+
 			binary, err := exec.LookPath(args[0])
 			if err != nil {
 				return fmt.Errorf("failed to find binary %s: %w", args[0], err)
@@ -295,6 +342,7 @@ Example:
 
 	rootCmd.Flags().StringVar(&stateDir, "state-dir", "/data", "Directory to watch for state changes")
 	rootCmd.Flags().StringVar(&storePath, "store", "/deltas/db.bolt", "Path to delta storage file")
+	rootCmd.PersistentFlags().BoolVar(&debugEnabled, "debug", false, "Enable verbose debug logging")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

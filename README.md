@@ -60,7 +60,7 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 │ Container                        │
 │ ┌──────────────────────────────┐ │
 │ │ Your Application             │ │
-│ │          ↓                    │ │
+│ │          ↓                   │ │
 │ │ DiffKeeper Agent (6.5MB)     │ │
 │ │  ├─ fsnotify (file watching) │ │
 │ │  ├─ gzip compression         │ │
@@ -117,11 +117,20 @@ docker run -it \
   /bin/sh -c "./diffkeeper --state-dir=/app/data --store=/deltas/db.bolt your-app-start"
 ```
 
+> Need verbose logs while troubleshooting? Append `--debug` before the wrapped command to emit watcher events and delta details:
+> `./diffkeeper --debug --state-dir=...`
+
 **Example - Nginx config persistence:**
 ```bash
 docker run -v ./deltas:/deltas nginx:alpine \
   /bin/sh -c "./diffkeeper --state-dir=/etc/nginx --store=/deltas/db.bolt nginx -g 'daemon off;'"
 ```
+
+### Watching Nested Directories
+
+- DiffKeeper now walks any directory as soon as it appears and attaches watchers to every level, so files dropped into newly created subfolders are captured immediately.
+- On Windows, where `os.MkdirAll` only emits a `CREATE` event for the top-most folder, this recursive watcher keeps nested writes safe without manual intervention.
+- Run with `--debug` to stream watcher activity when you need to confirm observers were attached or to track down paths that are being ignored.
 
 ### 3. Kubernetes Deployment
 
