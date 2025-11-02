@@ -132,6 +132,12 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - On Windows, where `os.MkdirAll` only emits a `CREATE` event for the top-most folder, this recursive watcher keeps nested writes safe without manual intervention.
 - Run with `--debug` to stream watcher activity when you need to confirm observers were attached or to track down paths that are being ignored.
 
+### Release Notes
+
+- Recursive directory watching is now enabled cross-platform, ensuring nested writes are captured the moment new folders appear.
+- Added a regression test to confirm nested directories are monitored on every OS.
+- `--debug` verbose logging documents watcher setup in the logs so you can troubleshoot missing events quickly.
+
 ### 3. Kubernetes Deployment
 
 ```yaml

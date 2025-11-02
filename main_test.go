@@ -927,11 +927,7 @@ func BenchmarkRedShift(b *testing.B) {
 	}
 }
 
-func TestWatchLoopNestedCaptureWindows(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("Nested watcher verification runs only on Windows")
-	}
-
+func TestWatchLoopNestedCapture(t *testing.T) {
 	prevDebug := debugEnabled
 	debugEnabled = true
 	defer func() { debugEnabled = prevDebug }()
@@ -957,14 +953,14 @@ func TestWatchLoopNestedCaptureWindows(t *testing.T) {
 		close(done)
 	}()
 
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
 
 	nestedDir := filepath.Join(stateDir, "level1", "level2")
 	if err := os.MkdirAll(nestedDir, 0755); err != nil {
 		t.Fatalf("Failed to create nested directory: %v", err)
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
 
 	targetFile := filepath.Join(nestedDir, "nested.txt")
 	if err := os.WriteFile(targetFile, []byte("nested content"), 0644); err != nil {

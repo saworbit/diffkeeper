@@ -24,6 +24,7 @@ coverage.out
 
 # OS
 .DS_Store
+length.txt
 
 # Go
 vendor/
