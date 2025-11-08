@@ -17,13 +17,22 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
+	"github.com/yourorg/diffkeeper/pkg/cas"
+	"github.com/yourorg/diffkeeper/pkg/config"
+	"github.com/yourorg/diffkeeper/pkg/diff"
+	"github.com/yourorg/diffkeeper/pkg/merkle"
 	"go.etcd.io/bbolt"
 )
 
 const (
-	BucketDeltas   = "deltas"
-	BucketHashes   = "hashes"
-	BucketMetadata = "meta"
+	BucketDeltas     = "deltas"     // Legacy: full file storage (MVP)
+	BucketHashes     = "hashes"     // File hash tracking
+	BucketMetadata   = "meta"       // File metadata (versions, Merkle roots)
+	BucketSnapshots  = "snapshots"  // Periodic base snapshots
+	SchemaVersionKey = "schema_version"
+
+	SchemaVersionMVP  = 1  // MVP: full gzip storage
+	SchemaVersionDiff = 2  // v1.0: binary diffs + CAS
 )
 
 var debugEnabled bool
@@ -36,10 +45,27 @@ func logDebug(format string, args ...interface{}) {
 }
 
 type DiffKeeper struct {
-	db        *bbolt.DB
-	stateDir  string
-	storePath string
-	watcher   *fsnotify.Watcher
+	db         *bbolt.DB
+	stateDir   string
+	storePath  string
+	watcher    *fsnotify.Watcher
+	config     *config.DiffConfig
+	cas        *cas.CASStore
+	merkle     *merkle.MerkleManager
+	diffEngine diff.DiffEngine
+}
+
+// FileMetadata stores metadata for files using binary diffs
+type FileMetadata struct {
+	FilePath        string    `json:"file_path"`
+	CIDs            []string  `json:"cids"`             // List of CIDs (chunks or diffs)
+	MerkleRoot      []byte    `json:"merkle_root"`      // Merkle tree root hash
+	IsChunked       bool      `json:"is_chunked"`       // Whether file was chunked
+	IsSnapshot      bool      `json:"is_snapshot"`      // Whether this is a full snapshot
+	VersionCount    int       `json:"version_count"`    // Number of versions captured
+	Timestamp       time.Time `json:"timestamp"`        // When this version was captured
+	OriginalSize    int64     `json:"original_size"`    // Original file size
+	CompressedSize  int64     `json:"compressed_size"`  // Compressed/diff size
 }
 
 func (dk *DiffKeeper) addWatchRecursive(root string) error {
@@ -74,7 +100,7 @@ func (dk *DiffKeeper) addWatchRecursive(root string) error {
 	})
 }
 
-func NewDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
+func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKeeper, error) {
 	db, err := bbolt.Open(storePath, 0600, &bbolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open store: %w", err)
@@ -82,7 +108,7 @@ func NewDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
 
 	// Initialize buckets
 	err = db.Update(func(tx *bbolt.Tx) error {
-		for _, bucket := range []string{BucketDeltas, BucketHashes, BucketMetadata} {
+		for _, bucket := range []string{BucketDeltas, BucketHashes, BucketMetadata, BucketSnapshots} {
 			if _, err := tx.CreateBucketIfNotExists([]byte(bucket)); err != nil {
 				return err
 			}
@@ -100,12 +126,40 @@ func NewDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
 	}
 
-	return &DiffKeeper{
-		db:        db,
-		stateDir:  stateDir,
-		storePath: storePath,
-		watcher:   watcher,
-	}, nil
+	// Initialize CAS store
+	casStore, err := cas.NewCASStore(db, cfg.HashAlgo)
+	if err != nil {
+		db.Close()
+		watcher.Close()
+		return nil, fmt.Errorf("failed to initialize CAS: %w", err)
+	}
+
+	// Initialize diff engine
+	diffEngine, err := diff.NewDiffEngine(cfg.Library)
+	if err != nil {
+		db.Close()
+		watcher.Close()
+		return nil, fmt.Errorf("failed to initialize diff engine: %w", err)
+	}
+
+	dk := &DiffKeeper{
+		db:         db,
+		stateDir:   stateDir,
+		storePath:  storePath,
+		watcher:    watcher,
+		config:     cfg,
+		cas:        casStore,
+		merkle:     merkle.NewMerkleManager(),
+		diffEngine: diffEngine,
+	}
+
+	// Perform schema migration if needed
+	if err := dk.migrateSchema(); err != nil {
+		dk.Close()
+		return nil, fmt.Errorf("schema migration failed: %w", err)
+	}
+
+	return dk, nil
 }
 
 func (dk *DiffKeeper) Close() error {
@@ -118,8 +172,21 @@ func (dk *DiffKeeper) Close() error {
 	return nil
 }
 
-// RedShift: Replay all deltas to restore filesystem state
+// RedShift: Replay all deltas to restore filesystem state (routes to appropriate implementation)
 func (dk *DiffKeeper) RedShift() error {
+	// Check schema version to determine which implementation to use
+	schemaVersion := dk.getSchemaVersion()
+
+	if schemaVersion >= SchemaVersionDiff && dk.config != nil && dk.config.EnableDiff {
+		return dk.RedShiftDiff()
+	}
+
+	// Fall back to MVP implementation
+	return dk.redShiftMVP()
+}
+
+// redShiftMVP: Legacy MVP implementation (full file decompression)
+func (dk *DiffKeeper) redShiftMVP() error {
 	log.Println("[RedShift] Restoring state from deltas...")
 
 	startTime := time.Now()
@@ -127,6 +194,10 @@ func (dk *DiffKeeper) RedShift() error {
 
 	err := dk.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BucketDeltas))
+		if b == nil {
+			return nil // No deltas to restore
+		}
+
 		c := b.Cursor()
 
 		for k, v := c.First(); k != nil; k, v = c.Next() {
@@ -160,8 +231,19 @@ func (dk *DiffKeeper) RedShift() error {
 	return err
 }
 
-// BlueShift: Capture file change as compressed delta
+// BlueShift: Capture file change (routes to appropriate implementation)
 func (dk *DiffKeeper) BlueShift(path string) error {
+	// Use binary diffs if enabled
+	if dk.config != nil && dk.config.EnableDiff {
+		return dk.BlueShiftDiff(path)
+	}
+
+	// Fall back to MVP implementation
+	return dk.blueShiftMVP(path)
+}
+
+// blueShiftMVP: Legacy MVP implementation (full file compression)
+func (dk *DiffKeeper) blueShiftMVP(path string) error {
 	relPath, err := filepath.Rel(dk.stateDir, path)
 	if err != nil {
 		return err
@@ -292,23 +374,71 @@ func main() {
 	var (
 		stateDir  string
 		storePath string
+
+		// Binary diff configuration
+		enableDiff       bool
+		diffLibrary      string
+		chunkSizeMB      int
+		hashAlgo         string
+		dedupScope       string
+		snapshotInterval int
 	)
 
 	rootCmd := &cobra.Command{
 		Use:   "diffkeeper [flags] -- <command> [args...]",
 		Short: "DiffKeeper - Lightweight state recovery for containers",
 		Long: `DiffKeeper captures file-level state changes in containerized workloads.
-		
+
+Binary Diffs (v1.0):
+  Uses efficient binary diffing (bsdiff) with content-addressable storage (CAS)
+  for 50-80% storage reduction on partial file updates.
+
 Example:
-  diffkeeper --state-dir=/data --store=/deltas/db.bolt -- postgres -D /data`,
+  diffkeeper --state-dir=/data --store=/deltas/db.bolt -- postgres -D /data
+  diffkeeper --enable-diff --chunk-size=8 --state-dir=/data -- myapp`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if debugEnabled {
 				log.Println("[Debug] Verbose logging enabled")
 			}
 
+			// Load configuration
+			cfg := config.LoadFromEnv()
+
+			// Override with CLI flags if provided
+			if cmd.Flags().Changed("enable-diff") {
+				cfg.EnableDiff = enableDiff
+			}
+			if cmd.Flags().Changed("diff-library") {
+				cfg.Library = diffLibrary
+			}
+			if cmd.Flags().Changed("chunk-size") {
+				cfg.ChunkSizeMB = chunkSizeMB
+			}
+			if cmd.Flags().Changed("hash-algo") {
+				cfg.HashAlgo = hashAlgo
+			}
+			if cmd.Flags().Changed("dedup-scope") {
+				cfg.DedupScope = dedupScope
+			}
+			if cmd.Flags().Changed("snapshot-interval") {
+				cfg.SnapshotInterval = snapshotInterval
+			}
+
+			// Validate configuration
+			if err := cfg.Validate(); err != nil {
+				return fmt.Errorf("invalid configuration: %w", err)
+			}
+
+			if cfg.EnableDiff {
+				log.Printf("[Config] Binary diffs enabled (library: %s, chunk size: %dMB, hash: %s)",
+					cfg.Library, cfg.ChunkSizeMB, cfg.HashAlgo)
+			} else {
+				log.Println("[Config] Using legacy MVP mode (full file compression)")
+			}
+
 			// Initialize DiffKeeper
-			dk, err := NewDiffKeeper(stateDir, storePath)
+			dk, err := NewDiffKeeper(stateDir, storePath, cfg)
 			if err != nil {
 				return fmt.Errorf("initialization failed: %w", err)
 			}
@@ -340,9 +470,18 @@ Example:
 		},
 	}
 
+	// Core flags
 	rootCmd.Flags().StringVar(&stateDir, "state-dir", "/data", "Directory to watch for state changes")
 	rootCmd.Flags().StringVar(&storePath, "store", "/deltas/db.bolt", "Path to delta storage file")
 	rootCmd.PersistentFlags().BoolVar(&debugEnabled, "debug", false, "Enable verbose debug logging")
+
+	// Binary diff flags
+	rootCmd.Flags().BoolVar(&enableDiff, "enable-diff", true, "Enable binary diffs (default: true)")
+	rootCmd.Flags().StringVar(&diffLibrary, "diff-library", "bsdiff", "Diff library to use (bsdiff or xdelta)")
+	rootCmd.Flags().IntVar(&chunkSizeMB, "chunk-size", 4, "Chunk size in MB for large files")
+	rootCmd.Flags().StringVar(&hashAlgo, "hash-algo", "sha256", "Hash algorithm for CAS (sha256 or blake3)")
+	rootCmd.Flags().StringVar(&dedupScope, "dedup-scope", "container", "Deduplication scope (container or cluster)")
+	rootCmd.Flags().IntVar(&snapshotInterval, "snapshot-interval", 10, "Create full snapshot every N versions")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

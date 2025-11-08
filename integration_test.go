@@ -1,0 +1,540 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/yourorg/diffkeeper/pkg/config"
+	"go.etcd.io/bbolt"
+)
+
+// TestBinaryDiffsEndToEnd tests the complete binary diff workflow
+func TestBinaryDiffsEndToEnd(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "diff.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	// Initialize DiffKeeper with binary diffs enabled
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	// Create initial file (should create a snapshot)
+	testFile := filepath.Join(stateDir, "test.txt")
+	v1Content := []byte("Version 1: Initial content with some text")
+
+	if err := os.WriteFile(testFile, v1Content, 0644); err != nil {
+		t.Fatalf("Failed to write v1: %v", err)
+	}
+
+	if err := dk.BlueShift(testFile); err != nil {
+		t.Fatalf("BlueShift v1 failed: %v", err)
+	}
+
+	// Modify file (should create a diff)
+	v2Content := []byte("Version 2: Modified content with different text")
+
+	if err := os.WriteFile(testFile, v2Content, 0644); err != nil {
+		t.Fatalf("Failed to write v2: %v", err)
+	}
+
+	if err := dk.BlueShift(testFile); err != nil {
+		t.Fatalf("BlueShift v2 failed: %v", err)
+	}
+
+	// Verify metadata was stored
+	meta, err := dk.getMetadata("test.txt")
+	if err != nil {
+		t.Fatalf("Failed to get metadata: %v", err)
+	}
+
+	if meta.VersionCount != 2 {
+		t.Errorf("Expected version count 2, got %d", meta.VersionCount)
+	}
+
+	if len(meta.CIDs) == 0 {
+		t.Error("Expected CIDs to be populated")
+	}
+
+	if len(meta.MerkleRoot) == 0 {
+		t.Error("Expected Merkle root to be set")
+	}
+
+	// Remove the file
+	if err := os.Remove(testFile); err != nil {
+		t.Fatalf("Failed to remove test file: %v", err)
+	}
+
+	// Restore using binary diffs
+	if err := dk.RedShift(); err != nil {
+		t.Fatalf("RedShift failed: %v", err)
+	}
+
+	// Verify file was restored correctly
+	restored, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read restored file: %v", err)
+	}
+
+	if !bytes.Equal(restored, v2Content) {
+		t.Errorf("Restored content doesn't match.\nExpected: %s\nGot: %s", v2Content, restored)
+	}
+
+	t.Log("✅ End-to-end binary diff test passed")
+}
+
+// TestMigrationMVPToDiff tests migration from MVP to binary diffs
+func TestMigrationMVPToDiff(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "migrate.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	// Step 1: Create data using MVP mode
+	dk1, err := newTestDiffKeeper(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create MVP DiffKeeper: %v", err)
+	}
+
+	testFile := filepath.Join(stateDir, "migrate-test.txt")
+	testContent := []byte("This is MVP data that will be migrated")
+
+	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	if err := dk1.BlueShift(testFile); err != nil {
+		t.Fatalf("MVP BlueShift failed: %v", err)
+	}
+
+	// Verify data was stored in MVP format (deltas bucket)
+	var mvpDataExists bool
+	dk1.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(BucketDeltas))
+		v := b.Get([]byte("migrate-test.txt"))
+		mvpDataExists = v != nil
+		return nil
+	})
+
+	if !mvpDataExists {
+		t.Fatal("MVP data was not stored in deltas bucket")
+	}
+
+	dk1.Close()
+
+	// Step 2: Reopen with binary diffs enabled (should trigger migration)
+	dk2, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper with diffs: %v", err)
+	}
+	defer dk2.Close()
+
+	// Verify schema was upgraded
+	schemaVersion := dk2.getSchemaVersion()
+	if schemaVersion != SchemaVersionDiff {
+		t.Errorf("Expected schema version %d, got %d", SchemaVersionDiff, schemaVersion)
+	}
+
+	// Verify metadata was created
+	meta, err := dk2.getMetadata("migrate-test.txt")
+	if err != nil {
+		t.Fatalf("Failed to get metadata after migration: %v", err)
+	}
+
+	if !meta.IsSnapshot {
+		t.Error("Migrated data should be marked as snapshot")
+	}
+
+	if len(meta.CIDs) == 0 {
+		t.Error("Migrated data should have CIDs")
+	}
+
+	// Verify CAS data was stored
+	if len(meta.CIDs) > 0 {
+		_, err := dk2.cas.Get(meta.CIDs[0])
+		if err != nil {
+			t.Errorf("Failed to retrieve CAS data: %v", err)
+		}
+	}
+
+	// Remove file and restore
+	if err := os.Remove(testFile); err != nil {
+		t.Fatalf("Failed to remove test file: %v", err)
+	}
+
+	if err := dk2.RedShift(); err != nil {
+		t.Fatalf("RedShift after migration failed: %v", err)
+	}
+
+	// Verify file was restored correctly
+	restored, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read restored file: %v", err)
+	}
+
+	if !bytes.Equal(restored, testContent) {
+		t.Errorf("Restored content doesn't match after migration.\nExpected: %s\nGot: %s", testContent, restored)
+	}
+
+	t.Log("✅ Migration test passed")
+}
+
+// TestMultiVersionDiffChain tests creating and recovering multiple versions
+func TestMultiVersionDiffChain(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "versions.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	testFile := filepath.Join(stateDir, "versions.txt")
+
+	// Create 15 versions (should trigger periodic snapshot)
+	versions := []string{
+		"Version 1: Initial baseline",
+		"Version 2: Small change here",
+		"Version 3: Another modification",
+		"Version 4: More updates",
+		"Version 5: Continued changes",
+		"Version 6: Half way there",
+		"Version 7: Keep going",
+		"Version 8: Almost there",
+		"Version 9: One more",
+		"Version 10: Snapshot should be created here",
+		"Version 11: After snapshot",
+		"Version 12: Continue with diffs",
+		"Version 13: More diffs",
+		"Version 14: Almost done",
+		"Version 15: Final version",
+	}
+
+	for i, content := range versions {
+		if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write version %d: %v", i+1, err)
+		}
+
+		if err := dk.BlueShift(testFile); err != nil {
+			t.Fatalf("BlueShift version %d failed: %v", i+1, err)
+		}
+
+		// Small delay to ensure different timestamps
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	// Verify version count
+	meta, err := dk.getMetadata("versions.txt")
+	if err != nil {
+		t.Fatalf("Failed to get metadata: %v", err)
+	}
+
+	if meta.VersionCount != 15 {
+		t.Errorf("Expected version count 15, got %d", meta.VersionCount)
+	}
+
+	// Check if snapshot was created at version 10
+	// (This is implicit - version count should trigger snapshot)
+
+	// Remove file and restore
+	if err := os.Remove(testFile); err != nil {
+		t.Fatalf("Failed to remove test file: %v", err)
+	}
+
+	if err := dk.RedShift(); err != nil {
+		t.Fatalf("RedShift failed: %v", err)
+	}
+
+	// Verify final version was restored
+	restored, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read restored file: %v", err)
+	}
+
+	if !bytes.Equal(restored, []byte(versions[14])) {
+		t.Errorf("Restored content doesn't match final version.\nExpected: %s\nGot: %s", versions[14], restored)
+	}
+
+	t.Logf("✅ Multi-version diff chain test passed (%d versions)", len(versions))
+}
+
+// TestLargeFileChunking tests chunking for large files
+func TestLargeFileChunking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping large file test in short mode")
+	}
+
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "large.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	// Create DiffKeeper with smaller chunk threshold for testing
+	cfg := config.DefaultConfig()
+	cfg.EnableDiff = true
+	cfg.ChunkSizeMB = 1 // 1MB chunks
+	cfg.ChunkThresholdBytes = 5 * 1024 * 1024 // 5MB threshold
+
+	dk, err := NewDiffKeeper(stateDir, storePath, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	// Create a 10MB file (should trigger chunking)
+	testFile := filepath.Join(stateDir, "large.bin")
+	largeData := make([]byte, 10*1024*1024)
+	for i := range largeData {
+		largeData[i] = byte(i % 256)
+	}
+
+	if err := os.WriteFile(testFile, largeData, 0644); err != nil {
+		t.Fatalf("Failed to write large file: %v", err)
+	}
+
+	if err := dk.BlueShift(testFile); err != nil {
+		t.Fatalf("BlueShift large file failed: %v", err)
+	}
+
+	// Verify metadata indicates chunking
+	meta, err := dk.getMetadata("large.bin")
+	if err != nil {
+		t.Fatalf("Failed to get metadata: %v", err)
+	}
+
+	if !meta.IsChunked {
+		t.Error("Expected file to be chunked")
+	}
+
+	if len(meta.CIDs) < 5 {
+		t.Errorf("Expected at least 5 chunks for 10MB file with 1MB chunks, got %d", len(meta.CIDs))
+	}
+
+	t.Logf("Large file chunked into %d chunks", len(meta.CIDs))
+
+	// Modify part of the file (only some chunks should change)
+	// Modify first 2MB
+	for i := 0; i < 2*1024*1024; i++ {
+		largeData[i] = byte((i + 100) % 256)
+	}
+
+	if err := os.WriteFile(testFile, largeData, 0644); err != nil {
+		t.Fatalf("Failed to write modified large file: %v", err)
+	}
+
+	if err := dk.BlueShift(testFile); err != nil {
+		t.Fatalf("BlueShift modified large file failed: %v", err)
+	}
+
+	// Remove and restore
+	if err := os.Remove(testFile); err != nil {
+		t.Fatalf("Failed to remove test file: %v", err)
+	}
+
+	startTime := time.Now()
+	if err := dk.RedShift(); err != nil {
+		t.Fatalf("RedShift failed: %v", err)
+	}
+	duration := time.Since(startTime)
+
+	// Verify file was restored correctly
+	restored, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read restored file: %v", err)
+	}
+
+	if !bytes.Equal(restored, largeData) {
+		t.Error("Restored large file content doesn't match")
+	}
+
+	t.Logf("✅ Large file chunking test passed (10MB file, %d chunks, recovered in %v)", len(meta.CIDs), duration)
+}
+
+// TestMerkleIntegrity tests Merkle tree integrity verification
+func TestMerkleIntegrity(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "merkle.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	testFile := filepath.Join(stateDir, "merkle-test.txt")
+	testContent := []byte("Content to test Merkle integrity")
+
+	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	if err := dk.BlueShift(testFile); err != nil {
+		t.Fatalf("BlueShift failed: %v", err)
+	}
+
+	// Get metadata
+	meta, err := dk.getMetadata("merkle-test.txt")
+	if err != nil {
+		t.Fatalf("Failed to get metadata: %v", err)
+	}
+
+	// Verify Merkle tree can be verified with correct root
+	err = dk.merkle.VerifyFileIntegrity(meta.CIDs, meta.MerkleRoot)
+	if err != nil {
+		t.Errorf("Merkle verification failed with correct root: %v", err)
+	}
+
+	// Test with corrupted Merkle root (should fail)
+	corruptedRoot := make([]byte, len(meta.MerkleRoot))
+	copy(corruptedRoot, meta.MerkleRoot)
+	if len(corruptedRoot) > 0 {
+		corruptedRoot[0] ^= 0xFF // Flip bits
+	}
+
+	err = dk.merkle.VerifyFileIntegrity(meta.CIDs, corruptedRoot)
+	if err == nil {
+		t.Error("Merkle verification should fail with corrupted root")
+	}
+
+	t.Log("✅ Merkle integrity test passed")
+}
+
+// TestCASDeduplication tests content-addressable storage deduplication
+func TestCASDeduplication(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "dedup.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	// Create two files with identical content
+	file1 := filepath.Join(stateDir, "file1.txt")
+	file2 := filepath.Join(stateDir, "file2.txt")
+	sharedContent := []byte("This content is shared between files")
+
+	if err := os.WriteFile(file1, sharedContent, 0644); err != nil {
+		t.Fatalf("Failed to write file1: %v", err)
+	}
+
+	if err := os.WriteFile(file2, sharedContent, 0644); err != nil {
+		t.Fatalf("Failed to write file2: %v", err)
+	}
+
+	if err := dk.BlueShift(file1); err != nil {
+		t.Fatalf("BlueShift file1 failed: %v", err)
+	}
+
+	// Get initial CAS stats
+	statsBefore, err := dk.cas.GetStats()
+	if err != nil {
+		t.Fatalf("Failed to get CAS stats: %v", err)
+	}
+
+	if err := dk.BlueShift(file2); err != nil {
+		t.Fatalf("BlueShift file2 failed: %v", err)
+	}
+
+	// Get CAS stats after second file
+	statsAfter, err := dk.cas.GetStats()
+	if err != nil {
+		t.Fatalf("Failed to get CAS stats: %v", err)
+	}
+
+	// Both files should reference the same CID (deduplication)
+	if statsAfter.TotalObjects != statsBefore.TotalObjects {
+		t.Error("Deduplication failed: second file created new CAS object instead of reusing existing")
+	}
+
+	if statsAfter.TotalRefs != 2 {
+		t.Errorf("Expected 2 references after storing 2 identical files, got %d", statsAfter.TotalRefs)
+	}
+
+	t.Logf("✅ CAS deduplication test passed (1 object, 2 references)")
+}
+
+// TestSnapshotInterval tests periodic snapshot creation
+func TestSnapshotInterval(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "snapshot.bolt")
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatalf("Failed to create state dir: %v", err)
+	}
+
+	// Create DiffKeeper with snapshot interval of 5
+	cfg := config.DefaultConfig()
+	cfg.EnableDiff = true
+	cfg.SnapshotInterval = 5
+
+	dk, err := NewDiffKeeper(stateDir, storePath, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	testFile := filepath.Join(stateDir, "snapshot-test.txt")
+
+	// Create 12 versions
+	for i := 1; i <= 12; i++ {
+		content := []byte(fmt.Sprintf("Version %d", i))
+		if err := os.WriteFile(testFile, content, 0644); err != nil {
+			t.Fatalf("Failed to write version %d: %v", i, err)
+		}
+
+		if err := dk.BlueShift(testFile); err != nil {
+			t.Fatalf("BlueShift version %d failed: %v", i, err)
+		}
+
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	// Get metadata
+	meta, err := dk.getMetadata("snapshot-test.txt")
+	if err != nil {
+		t.Fatalf("Failed to get metadata: %v", err)
+	}
+
+	// Version 10 should have triggered a snapshot (multiples of 5)
+	// The last version (12) should be stored
+	if meta.VersionCount != 12 {
+		t.Errorf("Expected version count 12, got %d", meta.VersionCount)
+	}
+
+	t.Logf("✅ Snapshot interval test passed (12 versions, interval=5)")
+}

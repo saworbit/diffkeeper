@@ -1,0 +1,299 @@
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.31 KB compressed)
+goos: windows
+goarch: amd64
+pkg: github.com/yourorg/diffkeeper
+cpu: AMD Ryzen 9 5900X 12-Core Processor            
+BenchmarkStorageMVP-24             	2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.31 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.31 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.31 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.31 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.31 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.30 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.32 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.32 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.32 KB compressed)
+2025/11/04 12:13:07 [BlueShift] Captured bench.bin (4.32 KB compressed)
+      10	  12175440 ns/op	      6554 bytes/op	 1915338 B/op	     119 allocs/op
+2025/11/04 12:13:07 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:07 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:07 [Migration] Schema migration completed successfully
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+BenchmarkStorageBinaryDiffs-24     	2025/11/04 12:13:07 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:07 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:07 [Migration] Schema migration completed successfully
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:07 [BlueShiftDiff] Captured bench.bin (snapshot, 1024.00 KB, 100.0% compression)
+      10	  19629630 ns/op	   3355443 bytes/op	 6611416 B/op	     338 allocs/op
+2025/11/04 12:13:07 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:07 [RedShift] Restored 0 files in 0s
+BenchmarkRecoveryMVP-24            	2025/11/04 12:13:07 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:07 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:07 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:07 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:07 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:07 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:07 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:07 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:07 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:07 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:08 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:08 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:08 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:08 [RedShift] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:08 [RedShift] Restored 0 files in 0s
+      10	     21550 ns/op
+2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+BenchmarkRecoveryBinaryDiffs-24    	2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+2025/11/04 12:13:08 [RedShiftDiff] Restoring state from binary diffs...
+2025/11/04 12:13:08 [RedShiftDiff] Restored 0 files in 0s
+      10	     20670 ns/op
+2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+BenchmarkDiffComputation-24        	2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured compute.bin (snapshot, 1024.00 KB, 100.0% compression)
+      10	  18356110 ns/op	 6833412 B/op	     336 allocs/op
+2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+BenchmarkChunking-24               	2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+2025/11/04 12:13:08 [BlueShiftDiff] Captured chunk.bin (snapshot, 10240.00 KB, 100.0% compression)
+      10	  46240960 ns/op	16665408 B/op	     997 allocs/op
+2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [BlueShiftDiff] Captured merkle.txt (snapshot, 9.77 KB, 100.0% compression)
+BenchmarkMerkleVerification-24     	2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+2025/11/04 12:13:08 [BlueShiftDiff] Captured merkle.txt (snapshot, 9.77 KB, 100.0% compression)
+      10	    932590 ns/op	    1043 B/op	      19 allocs/op
+2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+BenchmarkCASLookup-24              	2025/11/04 12:13:08 [Migration] Migrating schema from v1 to v2...
+2025/11/04 12:13:08 [Migration] Migrated 0 files from MVP to binary diffs
+2025/11/04 12:13:08 [Migration] Schema migration completed successfully
+      10	    133730 ns/op	     667 B/op	       9 allocs/op
+2025/11/04 12:13:08 [BlueShift] Captured bench.txt (0.05 KB compressed)
+BenchmarkBlueShift-24              	2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured bench.txt (0.05 KB compressed)
+      10	   3171390 ns/op
+2025/11/04 12:13:09 [BlueShift] Captured file_ .txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_!.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_#.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_$.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_%.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_&.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_'.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_(.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_).txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_+.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_,.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_-.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_..txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_0.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_1.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_2.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_3.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_4.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_5.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_6.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_7.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_8.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_9.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_:.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_;.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_=.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_@.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_A.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_B.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_C.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_D.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_E.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_F.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_G.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_H.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_I.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_J.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_K.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_L.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_M.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_N.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_O.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_P.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_Q.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_R.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_S.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_T.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_U.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_V.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_W.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_X.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_Y.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_Z.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_[.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_].txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_^.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file__.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_`.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_a.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_b.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_c.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:09 [RedShift] Restored 61 files in 74.3553ms
+BenchmarkRedShift-24               	2025/11/04 12:13:09 [BlueShift] Captured file_ .txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_!.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_#.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_$.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_%.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_&.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_'.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_(.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_).txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_+.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_,.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_-.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_..txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_0.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_1.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_2.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_3.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_4.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_5.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_6.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_7.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_8.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_9.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_:.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_;.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_=.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_@.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_A.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_B.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_C.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_D.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_E.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_F.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_G.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_H.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_I.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_J.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_K.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_L.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_M.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_N.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_O.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_P.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_Q.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_R.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_S.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_T.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_U.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_V.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_W.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_X.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_Y.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_Z.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_[.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_].txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_^.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file__.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_`.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_a.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_b.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [BlueShift] Captured file_c.txt (0.04 KB compressed)
+2025/11/04 12:13:09 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:09 [RedShift] Restored 61 files in 76.3942ms
+2025/11/04 12:13:09 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:10 [RedShift] Restored 61 files in 76.0655ms
+2025/11/04 12:13:10 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:10 [RedShift] Restored 61 files in 73.9416ms
+2025/11/04 12:13:10 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:10 [RedShift] Restored 61 files in 75.5042ms
+2025/11/04 12:13:10 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:10 [RedShift] Restored 61 files in 74.2522ms
+2025/11/04 12:13:10 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:10 [RedShift] Restored 61 files in 73.6016ms
+2025/11/04 12:13:10 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:10 [RedShift] Restored 61 files in 78.4417ms
+2025/11/04 12:13:10 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:11 [RedShift] Restored 61 files in 79.2897ms
+2025/11/04 12:13:11 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:11 [RedShift] Restored 61 files in 76.1827ms
+2025/11/04 12:13:11 [RedShift] Restoring state from deltas...
+2025/11/04 12:13:11 [RedShift] Restored 61 files in 77.1483ms
+      10	 170190680 ns/op
+PASS
+ok  	github.com/yourorg/diffkeeper	4.100s

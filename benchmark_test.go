@@ -1,0 +1,365 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/yourorg/diffkeeper/pkg/config"
+)
+
+// BenchmarkStorageMVP benchmarks storage usage with MVP (full file compression)
+func BenchmarkStorageMVP(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "mvp-bench.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	dk, err := newTestDiffKeeper(stateDir, storePath)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	// Create a 1MB file
+	testFile := filepath.Join(stateDir, "bench.bin")
+	data := make([]byte, 1024*1024)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		// Modify 20% of the file (simulate ML checkpoint update)
+		modifyStart := (i * 204800) % len(data)
+		modifyEnd := modifyStart + 204800 // 200KB change
+		if modifyEnd > len(data) {
+			modifyEnd = len(data)
+		}
+		for j := modifyStart; j < modifyEnd; j++ {
+			data[j] = byte(data[j] + 1)
+		}
+
+		if err := os.WriteFile(testFile, data, 0644); err != nil {
+			b.Fatal(err)
+		}
+
+		if err := dk.BlueShift(testFile); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.StopTimer()
+
+	// Report storage size
+	info, _ := os.Stat(storePath)
+	b.ReportMetric(float64(info.Size())/float64(b.N), "bytes/op")
+}
+
+// BenchmarkStorageBinaryDiffs benchmarks storage usage with binary diffs
+func BenchmarkStorageBinaryDiffs(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "diff-bench.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	// Create a 1MB file
+	testFile := filepath.Join(stateDir, "bench.bin")
+	data := make([]byte, 1024*1024)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		// Modify 20% of the file (simulate ML checkpoint update)
+		modifyStart := (i * 204800) % len(data)
+		modifyEnd := modifyStart + 204800 // 200KB change
+		if modifyEnd > len(data) {
+			modifyEnd = len(data)
+		}
+		for j := modifyStart; j < modifyEnd; j++ {
+			data[j] = byte(data[j] + 1)
+		}
+
+		if err := os.WriteFile(testFile, data, 0644); err != nil {
+			b.Fatal(err)
+		}
+
+		if err := dk.BlueShift(testFile); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.StopTimer()
+
+	// Report storage size
+	info, _ := os.Stat(storePath)
+	b.ReportMetric(float64(info.Size())/float64(b.N), "bytes/op")
+}
+
+// BenchmarkRecoveryMVP benchmarks recovery time with MVP
+func BenchmarkRecoveryMVP(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "mvp-recovery.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	// Setup: Create some test data
+	dk, err := newTestDiffKeeper(stateDir, storePath)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+
+	// Create 10 files
+	for i := 0; i < 10; i++ {
+		testFile := filepath.Join(stateDir, "file_"+string(rune(i))+".txt")
+		content := bytes.Repeat([]byte("test data "), 1000)
+		os.WriteFile(testFile, content, 0644)
+		dk.BlueShift(testFile)
+	}
+
+	dk.Close()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+
+		// Remove all files
+		os.RemoveAll(stateDir)
+		os.MkdirAll(stateDir, 0755)
+
+		// Reopen DiffKeeper
+		dk2, err := newTestDiffKeeper(stateDir, storePath)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		b.StartTimer()
+
+		// Measure recovery time
+		if err := dk2.RedShift(); err != nil {
+			b.Fatal(err)
+		}
+
+		b.StopTimer()
+		dk2.Close()
+	}
+}
+
+// BenchmarkRecoveryBinaryDiffs benchmarks recovery time with binary diffs
+func BenchmarkRecoveryBinaryDiffs(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "diff-recovery.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	// Setup: Create some test data
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+
+	// Create 10 files
+	for i := 0; i < 10; i++ {
+		testFile := filepath.Join(stateDir, "file_"+string(rune(i))+".txt")
+		content := bytes.Repeat([]byte("test data "), 1000)
+		os.WriteFile(testFile, content, 0644)
+		dk.BlueShift(testFile)
+	}
+
+	dk.Close()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+
+		// Remove all files
+		os.RemoveAll(stateDir)
+		os.MkdirAll(stateDir, 0755)
+
+		// Reopen DiffKeeper
+		dk2, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		b.StartTimer()
+
+		// Measure recovery time
+		if err := dk2.RedShift(); err != nil {
+			b.Fatal(err)
+		}
+
+		b.StopTimer()
+		dk2.Close()
+	}
+}
+
+// BenchmarkDiffComputation benchmarks binary diff computation time
+func BenchmarkDiffComputation(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "diff-compute.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	testFile := filepath.Join(stateDir, "compute.bin")
+
+	// Create base version
+	data := make([]byte, 1024*1024) // 1MB
+	for i := range data {
+		data[i] = byte(i)
+	}
+	os.WriteFile(testFile, data, 0644)
+	dk.BlueShift(testFile)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		// Modify 10% of data
+		for j := 0; j < len(data)/10; j++ {
+			data[j] = byte(data[j] + 1)
+		}
+
+		os.WriteFile(testFile, data, 0644)
+		if err := dk.BlueShift(testFile); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkChunking benchmarks file chunking performance
+func BenchmarkChunking(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "chunk-bench.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	// Configure for chunking
+	cfg := config.DefaultConfig()
+	cfg.EnableDiff = true
+	cfg.ChunkSizeMB = 1
+	cfg.ChunkThresholdBytes = 1 // Force chunking
+
+	dk, err := NewDiffKeeper(stateDir, storePath, cfg)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	testFile := filepath.Join(stateDir, "chunk.bin")
+
+	// Create 10MB file
+	data := make([]byte, 10*1024*1024)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		// Modify first chunk
+		for j := 0; j < 1024*1024; j++ {
+			data[j] = byte(data[j] + 1)
+		}
+
+		os.WriteFile(testFile, data, 0644)
+		if err := dk.BlueShift(testFile); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkMerkleVerification benchmarks Merkle tree verification
+func BenchmarkMerkleVerification(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "merkle-bench.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	testFile := filepath.Join(stateDir, "merkle.txt")
+	content := bytes.Repeat([]byte("test data "), 1000)
+	os.WriteFile(testFile, content, 0644)
+	dk.BlueShift(testFile)
+
+	meta, err := dk.getMetadata("merkle.txt")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		err := dk.merkle.VerifyFileIntegrity(meta.CIDs, meta.MerkleRoot)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkCASLookup benchmarks CAS retrieval performance
+func BenchmarkCASLookup(b *testing.B) {
+	tmpDir := b.TempDir()
+	stateDir := filepath.Join(tmpDir, "state")
+	storePath := filepath.Join(tmpDir, "cas-bench.bolt")
+
+	os.MkdirAll(stateDir, 0755)
+
+	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
+	if err != nil {
+		b.Fatalf("Failed to create DiffKeeper: %v", err)
+	}
+	defer dk.Close()
+
+	// Store test data in CAS
+	testData := []byte("This is test data for CAS lookup benchmark")
+	cid, err := dk.cas.Put(testData)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, err := dk.cas.Get(cid)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

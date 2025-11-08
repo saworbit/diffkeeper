@@ -8,8 +8,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yourorg/diffkeeper/pkg/config"
 	"go.etcd.io/bbolt"
 )
+
+// Helper function to create a DiffKeeper with MVP config for tests
+func newTestDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
+	// Use MVP config (diffs disabled) for backward compatibility
+	cfg := config.DefaultConfig()
+	cfg.EnableDiff = false
+	return NewDiffKeeper(stateDir, storePath, cfg)
+}
+
+// Helper function to create a DiffKeeper with binary diffs enabled
+func newTestDiffKeeperWithDiffs(stateDir, storePath string) (*DiffKeeper, error) {
+	cfg := config.DefaultConfig()
+	cfg.EnableDiff = true
+	return NewDiffKeeper(stateDir, storePath, cfg)
+}
 
 func TestCompressDecompress(t *testing.T) {
 	testData := []byte("Hello, DiffKeeper! This is test data that should compress well.")
@@ -44,7 +60,7 @@ func TestDiffKeeperLifecycle(t *testing.T) {
 	}
 
 	// Initialize DiffKeeper
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -109,7 +125,7 @@ func TestMultipleFilesRedShift(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -171,7 +187,7 @@ func TestNoChangeNoDelta(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -219,7 +235,7 @@ func TestSubdirectoryWatching(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -284,7 +300,7 @@ func TestLargeFiles(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -365,7 +381,7 @@ func TestPermissionErrors(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -401,7 +417,7 @@ func TestPermissionErrors(t *testing.T) {
 
 	// Test 3: Try to create DiffKeeper with invalid store path
 	invalidStorePath := filepath.Join(tmpDir, "nonexistent", "path", "store.bolt")
-	_, err = NewDiffKeeper(stateDir, invalidStorePath)
+	_, err = newTestDiffKeeper(stateDir, invalidStorePath)
 	if err == nil {
 		t.Error("Expected error when creating DiffKeeper with invalid store path, got nil")
 	}
@@ -419,7 +435,7 @@ func TestWatchLoopCapturesChanges(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -528,7 +544,7 @@ func TestNewDiffKeeperBucketCreationError(t *testing.T) {
 	}
 
 	// Create a valid DiffKeeper first
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -577,7 +593,7 @@ func TestWatchLoop(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -637,7 +653,7 @@ func TestWatchLoopFileChanges(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -699,7 +715,7 @@ func TestWatchLoopWithSubdirectories(t *testing.T) {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -741,7 +757,7 @@ func TestBlueShiftFileOutsideStateDir(t *testing.T) {
 		t.Fatalf("Failed to create outside dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -769,7 +785,7 @@ func TestRedShiftWithCorruptedData(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -828,7 +844,7 @@ func TestReadOnlyScenarios(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -856,7 +872,7 @@ func TestReadOnlyScenarios(t *testing.T) {
 		defer os.Chmod(storePath, 0644) // Restore for cleanup
 
 		// Try to open DiffKeeper with read-only database
-		dk2, err := NewDiffKeeper(stateDir, storePath)
+		dk2, err := newTestDiffKeeper(stateDir, storePath)
 		if err == nil {
 			// If opened successfully, try to write - should fail
 			testFile2 := filepath.Join(stateDir, "another.txt")
@@ -881,7 +897,7 @@ func BenchmarkBlueShift(b *testing.B) {
 
 	os.MkdirAll(stateDir, 0755)
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		b.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -905,7 +921,7 @@ func BenchmarkRedShift(b *testing.B) {
 
 	os.MkdirAll(stateDir, 0755)
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		b.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
@@ -940,7 +956,7 @@ func TestWatchLoopNestedCapture(t *testing.T) {
 		t.Fatalf("Failed to create state dir: %v", err)
 	}
 
-	dk, err := NewDiffKeeper(stateDir, storePath)
+	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
 		t.Fatalf("Failed to create DiffKeeper: %v", err)
 	}
