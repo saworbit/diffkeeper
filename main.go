@@ -58,14 +58,15 @@ type DiffKeeper struct {
 // FileMetadata stores metadata for files using binary diffs
 type FileMetadata struct {
 	FilePath        string    `json:"file_path"`
-	CIDs            []string  `json:"cids"`             // List of CIDs (chunks or diffs)
-	MerkleRoot      []byte    `json:"merkle_root"`      // Merkle tree root hash
-	IsChunked       bool      `json:"is_chunked"`       // Whether file was chunked
-	IsSnapshot      bool      `json:"is_snapshot"`      // Whether this is a full snapshot
-	VersionCount    int       `json:"version_count"`    // Number of versions captured
-	Timestamp       time.Time `json:"timestamp"`        // When this version was captured
-	OriginalSize    int64     `json:"original_size"`    // Original file size
-	CompressedSize  int64     `json:"compressed_size"`  // Compressed/diff size
+	CIDs            []string  `json:"cids"`              // List of CIDs (chunks or diffs)
+	MerkleRoot      []byte    `json:"merkle_root"`       // Merkle tree root hash
+	IsChunked       bool      `json:"is_chunked"`        // Whether file was chunked
+	IsSnapshot      bool      `json:"is_snapshot"`       // Whether this is a full snapshot
+	BaseSnapshotCID string    `json:"base_snapshot_cid"` // CID of base snapshot for diff chains
+	VersionCount    int       `json:"version_count"`     // Number of versions captured
+	Timestamp       time.Time `json:"timestamp"`         // When this version was captured
+	OriginalSize    int64     `json:"original_size"`     // Original file size
+	CompressedSize  int64     `json:"compressed_size"`   // Compressed/diff size
 }
 
 func (dk *DiffKeeper) addWatchRecursive(root string) error {

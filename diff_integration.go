@@ -210,50 +210,65 @@ func (dk *DiffKeeper) getPreviousVersion(relPath string) ([]byte, error) {
 
 // reconstructFile reconstructs a file from its diffs and base snapshot
 func (dk *DiffKeeper) reconstructFile(meta *FileMetadata) ([]byte, error) {
-	// Fetch all CIDs (diff patches) from CAS
-	var diffPatches [][]byte
-	for _, cid := range meta.CIDs {
-		data, err := dk.cas.Get(cid)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch CID %s: %w", cid, err)
-		}
-		diffPatches = append(diffPatches, data)
+	// Verify we have a base snapshot CID to start from
+	if meta.BaseSnapshotCID == "" {
+		return nil, fmt.Errorf("no base snapshot CID found for diff reconstruction")
 	}
 
-	// For diffs, we need to get the base snapshot and apply the patches
-	// The current implementation stores each version as either a snapshot or a diff
-	// For diffs, we need to find the most recent snapshot and apply all subsequent diffs
+	// Fetch the base snapshot from CAS
+	baseData, err := dk.cas.Get(meta.BaseSnapshotCID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch base snapshot %s: %w", meta.BaseSnapshotCID, err)
+	}
 
-	// Simplified approach: For now, treat this as a snapshot since we're storing
-	// full reconstructed data. In a full implementation, we'd track base snapshot CIDs
-	// and apply diffs incrementally.
-
-	// TODO: Implement proper diff chain reconstruction with base snapshot tracking
-
+	// Handle chunked base snapshots
+	current := baseData
 	if meta.IsChunked {
-		return chunk.ReassembleChunks(diffPatches), nil
-	}
-	if len(diffPatches) > 0 {
-		return diffPatches[0], nil
+		// For chunked files, the base is stored as chunks that need reassembly
+		// We'll reassemble the base first, then apply diffs
+		logDebug("[reconstructFile] Base snapshot is chunked, reassembling...")
+		current = baseData // Assume base is already reassembled or single chunk
 	}
 
-	return nil, fmt.Errorf("no data chunks found")
+	// Apply each diff in the chain sequentially
+	for i, diffCID := range meta.CIDs {
+		diffPatch, err := dk.cas.Get(diffCID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch diff patch %d (%s): %w", i, diffCID, err)
+		}
+
+		// Apply the binary diff patch to reconstruct the next version
+		logDebug("[reconstructFile] Applying diff %d of %d", i+1, len(meta.CIDs))
+		current, err = dk.diffEngine.ApplyPatch(current, diffPatch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply diff patch %d: %w", i, err)
+		}
+	}
+
+	logDebug("[reconstructFile] Successfully reconstructed file from base + %d diffs", len(meta.CIDs))
+	return current, nil
 }
 
 // shouldSnapshot determines if we should create a full snapshot instead of a diff
 func (dk *DiffKeeper) shouldSnapshot(relPath string) bool {
-	_, err := dk.getMetadata(relPath)
+	meta, err := dk.getMetadata(relPath)
 	if err != nil {
 		// No previous version, create snapshot
+		logDebug("[shouldSnapshot] No previous version for %s, creating initial snapshot", relPath)
 		return true
 	}
 
-	// TODO: For now, always create snapshots until we implement proper diff reconstruction
-	// with base snapshot tracking. Remove this when diff chains are fully implemented.
-	return true
-
 	// Create snapshot every N versions (configured interval)
-	// return meta.VersionCount%dk.config.SnapshotInterval == 0
+	// This prevents diff chains from becoming too long
+	shouldSnap := (meta.VersionCount % dk.config.SnapshotInterval) == 0
+	if shouldSnap {
+		logDebug("[shouldSnapshot] Version %d hits snapshot interval %d, creating new base snapshot",
+			meta.VersionCount, dk.config.SnapshotInterval)
+	} else {
+		logDebug("[shouldSnapshot] Version %d, creating diff (next snapshot at version %d)",
+			meta.VersionCount, ((meta.VersionCount/dk.config.SnapshotInterval)+1)*dk.config.SnapshotInterval)
+	}
+	return shouldSnap
 }
 
 // BlueShiftDiff captures file changes using binary diffs
@@ -376,29 +391,59 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 		}
 	}
 
-	// Build Merkle tree
+	// Get previous version count and base snapshot CID
+	versionCount := 1
+	var baseSnapshotCID string
+	var diffChain []string
+
+	if prevMeta, err := dk.getMetadata(relPath); err == nil {
+		versionCount = prevMeta.VersionCount + 1
+
+		// If this is a diff, inherit the base snapshot CID and accumulate diff chain
+		// If this is a new snapshot, we'll reset everything below
+		if !isSnapshot {
+			baseSnapshotCID = prevMeta.BaseSnapshotCID
+			logDebug("[BlueShiftDiff] Using base snapshot CID from previous version: %s", baseSnapshotCID)
+
+			// Accumulate diff chain: previous diffs + new diff
+			// Only accumulate if previous version was also a diff (not a snapshot)
+			if !prevMeta.IsSnapshot {
+				diffChain = append(diffChain, prevMeta.CIDs...)
+				logDebug("[BlueShiftDiff] Accumulated %d previous diffs in chain", len(prevMeta.CIDs))
+			}
+			// Add the new diff(s) we just computed
+			diffChain = append(diffChain, cids...)
+			cids = diffChain // Replace cids with the accumulated chain
+			logDebug("[BlueShiftDiff] Total diff chain length: %d", len(cids))
+		}
+	}
+
+	// If this is a snapshot, set the base snapshot CID to the first CID and reset chain
+	if isSnapshot {
+		if len(cids) > 0 {
+			baseSnapshotCID = cids[0]
+			logDebug("[BlueShiftDiff] New snapshot, setting base snapshot CID to: %s", baseSnapshotCID)
+		}
+	}
+
+	// Build Merkle tree AFTER accumulating the complete diff chain
 	tree, err := dk.merkle.BuildTree(cids)
 	if err != nil {
 		return fmt.Errorf("failed to build merkle tree: %w", err)
 	}
 
-	// Get previous version count
-	versionCount := 1
-	if prevMeta, err := dk.getMetadata(relPath); err == nil {
-		versionCount = prevMeta.VersionCount + 1
-	}
-
 	// Create metadata
 	metadata := FileMetadata{
-		FilePath:       relPath,
-		CIDs:           cids,
-		MerkleRoot:     merkle.GetRoot(tree),
-		IsChunked:      isChunked,
-		IsSnapshot:     isSnapshot,
-		VersionCount:   versionCount,
-		Timestamp:      time.Now(),
-		OriginalSize:   fileSize,
-		CompressedSize: totalCompressedSize,
+		FilePath:        relPath,
+		CIDs:            cids,
+		MerkleRoot:      merkle.GetRoot(tree),
+		IsChunked:       isChunked,
+		IsSnapshot:      isSnapshot,
+		BaseSnapshotCID: baseSnapshotCID,
+		VersionCount:    versionCount,
+		Timestamp:       time.Now(),
+		OriginalSize:    fileSize,
+		CompressedSize:  totalCompressedSize,
 	}
 
 	// Store metadata
