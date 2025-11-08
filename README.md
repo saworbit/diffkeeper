@@ -140,13 +140,19 @@ docker run -v ./deltas:/deltas nginx:alpine \
 ```
 
 **CLI Flags (v1.0):**
+
+**Core Flags:**
+- `--state-dir`: Directory to watch for state changes (default: /data)
+- `--store`: Path to delta storage file (default: /deltas/db.bolt)
+- `--debug`: Enable verbose debug logging (default: false)
+
+**Binary Diff Flags:**
 - `--enable-diff`: Enable binary diffs (default: true)
 - `--diff-library`: Diff algorithm - "bsdiff" or "xdelta" (default: bsdiff)
 - `--chunk-size`: Chunk size in MB for large files (default: 4)
 - `--hash-algo`: Hash algorithm - "sha256" or "blake3" (default: sha256)
 - `--dedup-scope`: Deduplication scope - "container" or "cluster" (default: container)
 - `--snapshot-interval`: Create full snapshot every N versions (default: 10)
-- `--debug`: Enable verbose logging
 
 ### Watching Nested Directories
 
