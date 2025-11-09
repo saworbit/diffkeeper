@@ -10,7 +10,7 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-//go:embed ../../ebpf/diffkeeper.bpf.o
+//go:embed diffkeeper.bpf.o
 var diffkeeperObject []byte
 
 // bpfObjects mirrors the maps and programs compiled into diffkeeper.bpf.o.

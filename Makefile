@@ -19,7 +19,8 @@ $(EBPF_OBJ): $(EBPF_SRC) $(EBPF_HDR)
 	fi
 	@echo "[ebpf] Compiling kernel probes..."
 	$(CLANG) -O2 -g -target bpf -D__TARGET_ARCH_x86 -Iebpf -Iebpf/include -c $(EBPF_SRC) -o $(EBPF_OBJ)
-	@echo "[ebpf] Built: $(EBPF_OBJ)"
+	cp $(EBPF_OBJ) pkg/ebpf/diffkeeper.bpf.o
+	@echo "[ebpf] Built: $(EBPF_OBJ) (embedded copy refreshed)"
 
 # Run tests
 test:
