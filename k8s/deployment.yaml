@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: diffkeeper-sample
+  namespace: diffkeeper
+  labels:
+    app: diffkeeper-sample
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: diffkeeper-sample
+  template:
+    metadata:
+      labels:
+        app: diffkeeper-sample
+    spec:
+      serviceAccountName: diffkeeper
+      initContainers:
+        - name: diffkeeper-replay
+          image: ghcr.io/saworbit/diffkeeper:latest
+          args:
+            - "--state-dir=/state"
+            - "--store=/var/lib/diffkeeper/store.bolt"
+            - "--fallback-fsnotify=false"
+            - "--"
+            - "/bin/true"
+          volumeMounts:
+            - name: diffkeeper-state
+              mountPath: /state
+            - name: diffkeeper-store
+              mountPath: /var/lib/diffkeeper
+      containers:
+        - name: workload
+          image: docker.io/library/nginx:stable
+          volumeMounts:
+            - name: diffkeeper-state
+              mountPath: /usr/share/nginx/html
+        - name: diffkeeper-agent
+          image: ghcr.io/saworbit/diffkeeper:latest
+          args:
+            - "--state-dir=/state"
+            - "--store=/var/lib/diffkeeper/store.bolt"
+            - "--enable-ebpf=true"
+            - "--btf-cache-dir=/var/cache/diffkeeper/btf"
+            - "--"
+            - "/pause"
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          volumeMounts:
+            - name: diffkeeper-state
+              mountPath: /state
+            - name: diffkeeper-store
+              mountPath: /var/lib/diffkeeper
+            - name: diffkeeper-btf
+              mountPath: /var/cache/diffkeeper/btf
+      volumes:
+        - name: diffkeeper-state
+          emptyDir: {}
+        - name: diffkeeper-store
+          emptyDir: {}
+        - name: diffkeeper-btf
+          emptyDir: {}

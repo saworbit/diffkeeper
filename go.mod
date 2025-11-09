@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/cbergoon/merkletree v0.2.0
-	github.com/cilium/ebpf v0.13.0
+	github.com/cilium/ebpf v0.15.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/gabstv/go-bsdiff v1.0.5
 	github.com/multiformats/go-multihash v0.2.3
@@ -24,6 +24,8 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2 // indirect
-	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect
 )
+
+replace golang.org/x/sys => golang.org/x/sys v0.15.0

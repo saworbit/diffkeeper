@@ -1,0 +1,11 @@
+# Default owners
+* @saworbit @shaneawall
+
+# Documentation
+docs/** @saworbit @doc-team
+
+# eBPF kernel code
+ebpf/** @saworbit @kernel-reviewers
+
+# Helm + Kubernetes
+k8s/** @platform-team

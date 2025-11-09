@@ -2,7 +2,7 @@
 
 DiffKeeper's eBPF pipeline relies on BTF (BPF Type Format) data. Native BTF (`/sys/kernel/btf/vmlinux`) ships with modern distributions, while older kernels use the [BTFHub-Archive](https://github.com/aquasecurity/btfhub-archive) mirror. The loader automatically discovers the current distro via `/etc/os-release`, downloads the matching archive (if allowed), and caches it inside `--btf-cache-dir`.
 
-The table below lists the combinations we have validated end-to-end (syscall capture + profiler + lifecycle tracing). Any kernel ≥4.18 with either native BTF or a BTFHub artifact should work.
+The table below lists the combinations we have validated end-to-end (syscall capture + profiler + lifecycle tracing). Any kernel >=4.18 with either native BTF or a BTFHub artifact should work.
 
 | Distribution | Version | Kernel(s) | BTF Source | Notes |
 |--------------|---------|-----------|------------|-------|

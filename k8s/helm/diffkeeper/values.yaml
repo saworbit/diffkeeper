@@ -1,0 +1,29 @@
+image:
+  repository: ghcr.io/saworbit/diffkeeper
+  tag: latest
+  pullPolicy: IfNotPresent
+
+workload:
+  image: docker.io/library/nginx:stable
+  command: []
+  args: []
+
+stateDir: /state
+storePath: /var/lib/diffkeeper/store.bolt
+btfCacheDir: /var/cache/diffkeeper/btf
+
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+serviceAccount:
+  create: true
+  name: ""
+
+nodeSelector: {}
+affinity: {}
+tolerations: []

@@ -10,14 +10,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/yourorg/diffkeeper/pkg/config"
 )
@@ -27,10 +25,10 @@ var _ Manager = (*kernelManager)(nil)
 type kernelManager struct {
 	cfg       *config.EBPFConfig
 	stateDir  string
-	objects   *ebpf.Collection
+	objs      bpfObjects
 	btfSpec   *btf.Spec
 	links     []link.Link
-	perfRd    *perf.Reader
+	sysEvents *ringbuf.Reader
 	lifecycle *ringbuf.Reader
 
 	events          chan Event
@@ -88,22 +86,6 @@ func NewManager(stateDir string, cfg *config.EBPFConfig) (Manager, error) {
 }
 
 func (m *kernelManager) init() error {
-	objPath := m.cfg.ProgramPath
-	if objPath == "" {
-		objPath = filepath.Join("bin", "ebpf", "diffkeeper.bpf.o")
-	}
-
-	f, err := os.Open(objPath)
-	if err != nil {
-		return fmt.Errorf("open eBPF object (%s): %w", objPath, err)
-	}
-	defer f.Close()
-
-	spec, err := ebpf.LoadCollectionSpecFromReader(f)
-	if err != nil {
-		return fmt.Errorf("load eBPF spec: %w", err)
-	}
-
 	var opts ebpf.CollectionOptions
 	if m.btfSpec != nil {
 		opts.Programs = ebpf.ProgramOptions{
@@ -111,11 +93,9 @@ func (m *kernelManager) init() error {
 		}
 	}
 
-	objs, err := spec.Load(&opts)
-	if err != nil {
-		return fmt.Errorf("init eBPF collection: %w", err)
+	if err := m.loadObjects(&opts); err != nil {
+		return err
 	}
-	m.objects = objs
 
 	if err := m.attachSyscallProbes(); err != nil {
 		return err
@@ -135,61 +115,76 @@ func (m *kernelManager) init() error {
 	return nil
 }
 
-func (m *kernelManager) attachSyscallProbes() error {
-	type probeCfg struct {
-		program string
-		symbols []string
+func (m *kernelManager) loadObjects(opts *ebpf.CollectionOptions) error {
+	if m.cfg.ProgramPath == "" {
+		return loadBpfObjects(&m.objs, opts)
 	}
 
-	probes := []probeCfg{
-		{program: "kprobe_write", symbols: []string{"ksys_write", "__x64_sys_write"}},
-		{program: "kprobe_pwrite64", symbols: []string{"ksys_pwrite64", "__x64_sys_pwrite64"}},
-		{program: "kprobe_writev", symbols: []string{"ksys_writev", "__x64_sys_writev"}},
+	f, err := os.Open(m.cfg.ProgramPath)
+	if err != nil {
+		return fmt.Errorf("open eBPF object (%s): %w", m.cfg.ProgramPath, err)
 	}
+	defer f.Close()
+
+	spec, err := ebpf.LoadCollectionSpecFromReader(f)
+	if err != nil {
+		return fmt.Errorf("load eBPF spec: %w", err)
+	}
+
+	if err := spec.LoadAndAssign(&m.objs, opts); err != nil {
+		return fmt.Errorf("assign eBPF objects: %w", err)
+	}
+	return nil
+}
+
+func (m *kernelManager) attachSyscallProbes() error {
+	probes := []struct {
+		prog   *ebpf.Program
+		symbol string
+	}
+	probes = append(probes,
+		struct {
+			prog   *ebpf.Program
+			symbol string
+		}{m.objs.KprobeVfsWrite, "vfs_write"},
+		struct {
+			prog   *ebpf.Program
+			symbol string
+		}{m.objs.KprobeVfsWritev, "vfs_writev"},
+		struct {
+			prog   *ebpf.Program
+			symbol string
+		}{m.objs.KprobeVfsPwritev, "vfs_pwritev"},
+	)
 
 	for _, probe := range probes {
-		prog := m.objects.Programs[probe.program]
-		if prog == nil {
+		if probe.prog == nil {
 			continue
 		}
-
-		var attached bool
-		for _, symbol := range probe.symbols {
-			l, err := link.Kprobe(symbol, prog, nil)
-			if err != nil {
-				continue
-			}
-			m.links = append(m.links, l)
-			attached = true
-			break
+		l, err := link.Kprobe(probe.symbol, probe.prog, nil)
+		if err != nil {
+			return fmt.Errorf("attach %s: %w", probe.symbol, err)
 		}
-
-		if !attached {
-			return fmt.Errorf("failed to attach probe %s to any syscall", probe.program)
-		}
+		m.links = append(m.links, l)
 	}
 
 	return nil
 }
 
 func (m *kernelManager) setupReaders() error {
-	eventsMap := m.objects.Maps["events"]
-	if eventsMap == nil {
+	if m.objs.Events == nil {
 		return fmt.Errorf("eBPF object missing 'events' map for syscall captures")
 	}
 
-	pageSize := os.Getpagesize()
-	bufferSize := max(m.cfg.EventBufferSize, pageSize)
-
-	reader, err := perf.NewReader(eventsMap, bufferSize)
+	reader, err := ringbuf.NewReader(m.objs.Events)
 	if err != nil {
-		return fmt.Errorf("create perf reader: %w", err)
+		return fmt.Errorf("create syscall ring buffer: %w", err)
 	}
-	m.perfRd = reader
+	m.sysEvents = reader
 
 	if m.cfg.LifecycleTracing && m.cfg.CollectLifecycle {
-		if lifecycleMap := m.objects.Maps["lifecycle_events"]; lifecycleMap != nil {
-			rb, err := ringbuf.NewReader(lifecycleMap)
+		if m.objs.LifecycleEvents != nil {
+			rb, err := ringbuf.NewReader(m.objs.LifecycleEvents)
 			if err != nil {
 				return fmt.Errorf("create lifecycle ring buffer: %w", err)
 			}
@@ -201,12 +196,11 @@ func (m *kernelManager) setupReaders() error {
 }
 
 func (m *kernelManager) attachLifecycleTrace() error {
-	prog := m.objects.Programs["trace_container_lifecycle"]
-	if prog == nil {
+	if m.objs.HandleSchedExec == nil {
 		return errors.New("missing lifecycle trace program")
 	}
 
-	tracepoint, err := link.Tracepoint("sched", "sched_process_exec", prog, nil)
+	tracepoint, err := link.Tracepoint("sched", "sched_process_exec", m.objs.HandleSchedExec, nil)
 	if err != nil {
 		return fmt.Errorf("attach lifecycle tracepoint: %w", err)
 	}
@@ -223,8 +217,8 @@ func (m *kernelManager) Start(ctx context.Context) error {
 		return nil
 	}
 
-	if m.perfRd == nil {
-		return fmt.Errorf("perf reader not initialized")
+	if m.sysEvents == nil {
+		return fmt.Errorf("ring buffer reader not initialized")
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -243,17 +237,13 @@ func (m *kernelManager) consumeSyscallEvents(ctx context.Context) {
 	defer close(m.events)
 
 	for {
-		record, err := m.perfRd.Read()
+		record, err := m.sysEvents.Read()
 		if err != nil {
-			if errors.Is(err, perf.ErrClosed) || ctx.Err() != nil {
+			if errors.Is(err, ringbuf.ErrClosed) || ctx.Err() != nil {
 				return
 			}
-			log.Printf("[eBPF] perf read error: %v", err)
+			log.Printf("[eBPF] ringbuf read error: %v", err)
 			continue
-		}
-
-		if record.LostSamples > 0 {
-			log.Printf("[eBPF] lost %d samples (increase buffer size)", record.LostSamples)
 		}
 
 		event, err := decodeSyscallEvent(record.RawSample)
@@ -388,8 +378,8 @@ func (m *kernelManager) Close() error {
 		m.cancel()
 	}
 
-	if m.perfRd != nil {
-		m.perfRd.Close()
+	if m.sysEvents != nil {
+		m.sysEvents.Close()
 	}
 	if m.lifecycle != nil {
 		m.lifecycle.Close()
@@ -400,8 +390,8 @@ func (m *kernelManager) Close() error {
 	}
 	m.links = nil
 
-	if m.objects != nil {
-		m.objects.Close()
+	if err := m.objs.Close(); err != nil {
+		log.Printf("[eBPF] object close error: %v", err)
 	}
 
 	if m.btfSpec != nil {

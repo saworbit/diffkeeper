@@ -1,7 +1,9 @@
-# DiffKeeper: Lightweight State Recovery for Containers (v2.0 Preview)
+# DiffKeeper: Lightweight State Recovery for Containers (v1.0 Released – v2.0 eBPF Preview)
 
 > Capture file-level state changes in containerized workloads for fast recovery and debugging. No large persistent volumes required.
 
+[![CI](https://github.com/yourorg/diffkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/yourorg/diffkeeper/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yourorg/diffkeeper)](https://goreportcard.com/report/github.com/yourorg/diffkeeper)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Status: v2.0 Preview](https://img.shields.io/badge/Status-v2.0%20Preview-blue.svg)]()
 
@@ -55,6 +57,23 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 - **Drop-in compatible**: Works with Docker, Kubernetes, Podman, bare-metal
 
 **Best For:** Game servers, ML checkpoints, CI/CD caches, edge IoT, streaming analytics
+
+---
+
+## Kubernetes & Helm
+
+The repository ships with ready-to-run manifests under [`k8s/`](k8s/README.md):
+
+- `k8s/deployment.yaml` – Sidecar pattern with init-container replay.
+- `k8s/rbac.yaml` – Minimal service account + ClusterRoleBinding.
+- `k8s/helm/diffkeeper` – Helm chart for production clusters (configurable state dir, BTF cache, workloads).
+
+```bash
+kubectl apply -f k8s/rbac.yaml
+helm install diffkeeper k8s/helm/diffkeeper --namespace diffkeeper --create-namespace
+```
+
+Helm values expose image tags, dedicated workload commands, and cache locations so you can drop-in DiffKeeper alongside any StatefulSet.
 
 ---
 
@@ -500,16 +519,21 @@ func (dk *DiffKeeper) RedShiftDiff() error {
 - `pkg/ebpf/` - Kernel manager, profiler, and lifecycle tracing abstractions
 - `main.go` - CLI and orchestration (450 LOC)
 - `diff_integration.go` - Binary diff integration logic (378 LOC)
+- `bench/` - Synthetic throughput comparisons between ring buffers and fsnotify event loops
 
 For full implementation, see [main.go](main.go) and [diff_integration.go](diff_integration.go).
 
-## Additional Docs
-
-- [docs/ebpf-guide.md](docs/ebpf-guide.md) - Building and troubleshooting kernel probes
-- [docs/auto-injection.md](docs/auto-injection.md) - Wiring CRI traces + injector workflows
-- [docs/btf-core-guide.md](docs/btf-core-guide.md) - Using BTFHub downloads and CO-RE in production
-- [docs/supported-kernels.md](docs/supported-kernels.md) - Reference list of tested distros/kernels
-- [docs/patents.md](docs/patents.md) - Prior art & IP notes for profiler + auto-injection features
+- **Guides**
+  - [docs/ebpf-dev-setup.md](docs/ebpf-dev-setup.md) – Toolchain + BTF cache walk-through
+  - [docs/ebpf-guide.md](docs/ebpf-guide.md) – Kernel probe troubleshooting tips
+  - [docs/btf-core-guide.md](docs/btf-core-guide.md) – Using BTFHub downloads and CO-RE in production
+  - [docs/supported-kernels.md](docs/supported-kernels.md) – Reference list of tested distros/kernels
+  - [docs/auto-injection.md](docs/auto-injection.md) – Wiring CRI traces + injector workflows
+- **Security & Operations**
+  - [SECURITY.md](SECURITY.md) – How to report vulnerabilities
+  - [k8s/README.md](k8s/README.md) – Deployments, Helm chart, and RBAC
+- **Reference**
+  - [docs/patents.md](docs/patents.md) – Prior art & IP notes for profiler + auto-injection features
 
 ---
 
