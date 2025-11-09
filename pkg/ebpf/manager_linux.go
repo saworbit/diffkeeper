@@ -138,34 +138,36 @@ func (m *kernelManager) loadObjects(opts *ebpf.CollectionOptions) error {
 }
 
 func (m *kernelManager) attachSyscallProbes() error {
-	probes := []struct {
-		prog   *ebpf.Program
-		symbol string
+	type probeCfg struct {
+		prog    *ebpf.Program
+		symbols []string
 	}
-	probes = append(probes,
-		struct {
-			prog   *ebpf.Program
-			symbol string
-		}{m.objs.KprobeVfsWrite, "vfs_write"},
-		struct {
-			prog   *ebpf.Program
-			symbol string
-		}{m.objs.KprobeVfsWritev, "vfs_writev"},
-		struct {
-			prog   *ebpf.Program
-			symbol string
-		}{m.objs.KprobeVfsPwritev, "vfs_pwritev"},
-	)
+
+	probes := []probeCfg{
+		{prog: m.objs.KprobeVfsWrite, symbols: []string{"vfs_write", "ksys_write", "__x64_sys_write"}},
+		{prog: m.objs.KprobeVfsWritev, symbols: []string{"vfs_writev", "ksys_writev", "__x64_sys_writev"}},
+		{prog: m.objs.KprobeVfsPwritev, symbols: []string{"vfs_pwritev", "ksys_pwrite64", "__x64_sys_pwrite64"}},
+	}
 
 	for _, probe := range probes {
 		if probe.prog == nil {
 			continue
 		}
-		l, err := link.Kprobe(probe.symbol, probe.prog, nil)
-		if err != nil {
-			return fmt.Errorf("attach %s: %w", probe.symbol, err)
+
+		var attached bool
+		for _, symbol := range probe.symbols {
+			l, err := link.Kprobe(symbol, probe.prog, nil)
+			if err != nil {
+				continue
+			}
+			m.links = append(m.links, l)
+			attached = true
+			break
 		}
-		m.links = append(m.links, l)
+
+		if !attached {
+			return fmt.Errorf("failed to attach probe (symbols=%v)", probe.symbols)
+		}
 	}
 
 	return nil
@@ -392,10 +394,6 @@ func (m *kernelManager) Close() error {
 
 	if err := m.objs.Close(); err != nil {
 		log.Printf("[eBPF] object close error: %v", err)
-	}
-
-	if m.btfSpec != nil {
-		m.btfSpec.Close()
 	}
 
 	m.running = false

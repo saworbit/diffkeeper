@@ -1,9 +1,9 @@
-# DiffKeeper: Lightweight State Recovery for Containers (v1.0 Released â€“ v2.0 eBPF Preview)
+# DiffKeeper: Lightweight State Recovery for Containers (v1.0 Released - v2.0 eBPF Preview)
 
 > Capture file-level state changes in containerized workloads for fast recovery and debugging. No large persistent volumes required.
 
-[![CI](https://github.com/yourorg/diffkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/yourorg/diffkeeper/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/yourorg/diffkeeper)](https://goreportcard.com/report/github.com/yourorg/diffkeeper)
+[![CI](https://github.com/saworbit/diffkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/saworbit/diffkeeper/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/saworbit/diffkeeper)](https://goreportcard.com/report/github.com/saworbit/diffkeeper)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Status: v2.0 Preview](https://img.shields.io/badge/Status-v2.0%20Preview-blue.svg)]()
 
@@ -64,9 +64,9 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 
 The repository ships with ready-to-run manifests under [`k8s/`](k8s/README.md):
 
-- `k8s/deployment.yaml` â€“ Sidecar pattern with init-container replay.
-- `k8s/rbac.yaml` â€“ Minimal service account + ClusterRoleBinding.
-- `k8s/helm/diffkeeper` â€“ Helm chart for production clusters (configurable state dir, BTF cache, workloads).
+- `k8s/deployment.yaml` – Sidecar pattern with init-container replay.
+- `k8s/rbac.yaml` – Minimal service account + ClusterRoleBinding.
+- `k8s/helm/diffkeeper` – Helm chart for production clusters (configurable state dir, BTF cache, workloads).
 
 ```bash
 kubectl apply -f k8s/rbac.yaml
@@ -524,16 +524,16 @@ func (dk *DiffKeeper) RedShiftDiff() error {
 For full implementation, see [main.go](main.go) and [diff_integration.go](diff_integration.go).
 
 - **Guides**
-  - [docs/ebpf-dev-setup.md](docs/ebpf-dev-setup.md) â€“ Toolchain + BTF cache walk-through
-  - [docs/ebpf-guide.md](docs/ebpf-guide.md) â€“ Kernel probe troubleshooting tips
-  - [docs/btf-core-guide.md](docs/btf-core-guide.md) â€“ Using BTFHub downloads and CO-RE in production
-  - [docs/supported-kernels.md](docs/supported-kernels.md) â€“ Reference list of tested distros/kernels
-  - [docs/auto-injection.md](docs/auto-injection.md) â€“ Wiring CRI traces + injector workflows
+  - [docs/ebpf-dev-setup.md](docs/ebpf-dev-setup.md) – Toolchain + BTF cache walk-through
+  - [docs/ebpf-guide.md](docs/ebpf-guide.md) – Kernel probe troubleshooting tips
+  - [docs/btf-core-guide.md](docs/btf-core-guide.md) – Using BTFHub downloads and CO-RE in production
+  - [docs/supported-kernels.md](docs/supported-kernels.md) – Reference list of tested distros/kernels
+  - [docs/auto-injection.md](docs/auto-injection.md) – Wiring CRI traces + injector workflows
 - **Security & Operations**
-  - [SECURITY.md](SECURITY.md) â€“ How to report vulnerabilities
-  - [k8s/README.md](k8s/README.md) â€“ Deployments, Helm chart, and RBAC
+  - [SECURITY.md](SECURITY.md) – How to report vulnerabilities
+  - [k8s/README.md](k8s/README.md) – Deployments, Helm chart, and RBAC
 - **Reference**
-  - [docs/patents.md](docs/patents.md) â€“ Prior art & IP notes for profiler + auto-injection features
+  - [docs/patents.md](docs/patents.md) – Prior art & IP notes for profiler + auto-injection features
 
 ---
 

@@ -4,7 +4,7 @@ package ebpf
 
 import (
 	"bytes"
-	"embed"
+	_ "embed"
 	"fmt"
 
 	"github.com/cilium/ebpf"
