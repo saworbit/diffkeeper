@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,19 +22,20 @@ import (
 	"github.com/yourorg/diffkeeper/pkg/cas"
 	"github.com/yourorg/diffkeeper/pkg/config"
 	"github.com/yourorg/diffkeeper/pkg/diff"
+	"github.com/yourorg/diffkeeper/pkg/ebpf"
 	"github.com/yourorg/diffkeeper/pkg/merkle"
 	"go.etcd.io/bbolt"
 )
 
 const (
-	BucketDeltas     = "deltas"     // Legacy: full file storage (MVP)
-	BucketHashes     = "hashes"     // File hash tracking
-	BucketMetadata   = "meta"       // File metadata (versions, Merkle roots)
-	BucketSnapshots  = "snapshots"  // Periodic base snapshots
+	BucketDeltas     = "deltas"    // Legacy: full file storage (MVP)
+	BucketHashes     = "hashes"    // File hash tracking
+	BucketMetadata   = "meta"      // File metadata (versions, Merkle roots)
+	BucketSnapshots  = "snapshots" // Periodic base snapshots
 	SchemaVersionKey = "schema_version"
 
-	SchemaVersionMVP  = 1  // MVP: full gzip storage
-	SchemaVersionDiff = 2  // v1.0: binary diffs + CAS
+	SchemaVersionMVP  = 1 // MVP: full gzip storage
+	SchemaVersionDiff = 2 // v1.0: binary diffs + CAS
 )
 
 var debugEnabled bool
@@ -49,6 +52,10 @@ type DiffKeeper struct {
 	stateDir   string
 	storePath  string
 	watcher    *fsnotify.Watcher
+	monitorCtx context.Context
+	cancelMon  context.CancelFunc
+	ebpfMgr    ebpf.Manager
+	profiler   *ebpf.Profiler
 	config     *config.DiffConfig
 	cas        *cas.CASStore
 	merkle     *merkle.MerkleManager
@@ -101,6 +108,188 @@ func (dk *DiffKeeper) addWatchRecursive(root string) error {
 	})
 }
 
+// StartMonitoring enables either eBPF interception or fsnotify fallback based on availability
+func (dk *DiffKeeper) StartMonitoring(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	dk.monitorCtx, dk.cancelMon = context.WithCancel(ctx)
+
+	if dk.ebpfMgr != nil {
+		if err := dk.ebpfMgr.Start(dk.monitorCtx); err != nil {
+			log.Printf("[eBPF] start failed: %v", err)
+			if dk.config != nil && dk.config.EBPF.FallbackFSNotify {
+				log.Printf("[Monitor] Falling back to fsnotify watcher")
+				dk.ebpfMgr.Close()
+				dk.ebpfMgr = nil
+			} else {
+				return err
+			}
+		} else {
+			dk.startEBPFWorkers()
+			return nil
+		}
+	}
+
+	if err := dk.ensureWatcher(); err != nil {
+		return err
+	}
+	dk.startWatcherLoop()
+	return nil
+}
+
+func (dk *DiffKeeper) ensureWatcher() error {
+	if dk.watcher != nil {
+		return nil
+	}
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to create fsnotify watcher: %w", err)
+	}
+	dk.watcher = watcher
+	return nil
+}
+
+func (dk *DiffKeeper) startWatcherLoop() {
+	go func() {
+		if err := dk.WatchLoop(); err != nil {
+			log.Printf("[Watcher] Loop exited: %v", err)
+		}
+	}()
+}
+
+func (dk *DiffKeeper) startEBPFWorkers() {
+	if dk.ebpfMgr == nil {
+		return
+	}
+
+	events := dk.ebpfMgr.Events()
+	if events == nil {
+		log.Printf("[eBPF] event channel not available, falling back to fsnotify")
+		if dk.config != nil && dk.config.EBPF.FallbackFSNotify {
+			if err := dk.ensureWatcher(); err == nil {
+				dk.startWatcherLoop()
+			}
+		}
+		return
+	}
+
+	if dk.config != nil {
+		dk.profiler = ebpf.NewProfiler(&dk.config.EBPF, dk.ebpfMgr)
+		if dk.profiler != nil {
+			go dk.profiler.Run(dk.monitorCtx)
+		}
+	}
+
+	go dk.consumeEBPFEvents(events)
+
+	if dk.config != nil && dk.config.EBPF.AutoInject {
+		go dk.handleLifecycleEvents()
+	}
+
+	log.Printf("[Monitor] eBPF syscall interception active (state dir: %s)", dk.stateDir)
+}
+
+func (dk *DiffKeeper) consumeEBPFEvents(events <-chan ebpf.Event) {
+	for {
+		select {
+		case <-dk.monitorCtx.Done():
+			return
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
+			if evt.Path == "" || !dk.shouldCapturePath(evt.Path) {
+				continue
+			}
+			if dk.profiler != nil {
+				dk.profiler.Record(evt.Path)
+			}
+			if err := dk.BlueShift(evt.Path); err != nil {
+				log.Printf("[eBPF] capture failed for %s: %v", evt.Path, err)
+			}
+		}
+	}
+}
+
+func (dk *DiffKeeper) handleLifecycleEvents() {
+	if dk.ebpfMgr == nil {
+		return
+	}
+	ch := dk.ebpfMgr.LifecycleEvents()
+	if ch == nil {
+		return
+	}
+
+	for {
+		select {
+		case <-dk.monitorCtx.Done():
+			return
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			dk.dispatchLifecycleEvent(evt)
+		}
+	}
+}
+
+func (dk *DiffKeeper) dispatchLifecycleEvent(evt ebpf.LifecycleEvent) {
+	if dk.config == nil || !dk.config.EBPF.AutoInject {
+		return
+	}
+
+	// Focus on creation/start events
+	if evt.State != "create" && evt.State != "start" {
+		return
+	}
+
+	if dk.config.EBPF.InjectorCommand == "" {
+		log.Printf("[AutoInject] Detected %s for %s (runtime=%s) but injector command not configured",
+			evt.State, evt.ContainerID, evt.Runtime)
+		return
+	}
+
+	ctx := dk.monitorCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cmd := exec.CommandContext(ctx, dk.config.EBPF.InjectorCommand, evt.ContainerID)
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("DIFFKEEPER_CONTAINER_ID=%s", evt.ContainerID),
+		fmt.Sprintf("DIFFKEEPER_RUNTIME=%s", evt.Runtime),
+		fmt.Sprintf("DIFFKEEPER_NAMESPACE=%s", evt.Namespace),
+		fmt.Sprintf("DIFFKEEPER_STATE=%s", evt.State),
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[AutoInject] injector error for %s: %v (output: %s)", evt.ContainerID, err, string(output))
+		return
+	}
+
+	log.Printf("[AutoInject] injector completed for %s: %s", evt.ContainerID, strings.TrimSpace(string(output)))
+}
+
+func (dk *DiffKeeper) shouldCapturePath(path string) bool {
+	if path == "" {
+		return false
+	}
+	fullPath := path
+	if !filepath.IsAbs(path) {
+		fullPath = filepath.Join(dk.stateDir, path)
+	}
+	fullPath = filepath.Clean(fullPath)
+	state := filepath.Clean(dk.stateDir)
+
+	rel, err := filepath.Rel(state, fullPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return false
+	}
+	return true
+}
+
 func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKeeper, error) {
 	db, err := bbolt.Open(storePath, 0600, &bbolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
@@ -121,17 +310,45 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 		return nil, err
 	}
 
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create watcher: %w", err)
+	var (
+		watcher *fsnotify.Watcher
+		ebpfMgr ebpf.Manager
+		monitor string
+	)
+
+	if cfg != nil && cfg.EBPF.Enable {
+		if mgr, err := ebpf.NewManager(stateDir, &cfg.EBPF); err != nil {
+			if cfg.EBPF.FallbackFSNotify {
+				log.Printf("[eBPF] initialization failed (%v), falling back to fsnotify", err)
+			} else {
+				db.Close()
+				return nil, fmt.Errorf("ebpf initialization failed: %w", err)
+			}
+		} else {
+			ebpfMgr = mgr
+			monitor = "ebpf"
+		}
+	}
+
+	if monitor == "" {
+		watcher, err = fsnotify.NewWatcher()
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to create watcher: %w", err)
+		}
+		monitor = "fsnotify"
 	}
 
 	// Initialize CAS store
 	casStore, err := cas.NewCASStore(db, cfg.HashAlgo)
 	if err != nil {
 		db.Close()
-		watcher.Close()
+		if watcher != nil {
+			watcher.Close()
+		}
+		if ebpfMgr != nil {
+			ebpfMgr.Close()
+		}
 		return nil, fmt.Errorf("failed to initialize CAS: %w", err)
 	}
 
@@ -139,7 +356,12 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 	diffEngine, err := diff.NewDiffEngine(cfg.Library)
 	if err != nil {
 		db.Close()
-		watcher.Close()
+		if watcher != nil {
+			watcher.Close()
+		}
+		if ebpfMgr != nil {
+			ebpfMgr.Close()
+		}
 		return nil, fmt.Errorf("failed to initialize diff engine: %w", err)
 	}
 
@@ -148,6 +370,7 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 		stateDir:   stateDir,
 		storePath:  storePath,
 		watcher:    watcher,
+		ebpfMgr:    ebpfMgr,
 		config:     cfg,
 		cas:        casStore,
 		merkle:     merkle.NewMerkleManager(),
@@ -164,8 +387,14 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 }
 
 func (dk *DiffKeeper) Close() error {
+	if dk.cancelMon != nil {
+		dk.cancelMon()
+	}
 	if dk.watcher != nil {
 		dk.watcher.Close()
+	}
+	if dk.ebpfMgr != nil {
+		dk.ebpfMgr.Close()
 	}
 	if dk.db != nil {
 		return dk.db.Close()
@@ -298,15 +527,25 @@ func (dk *DiffKeeper) blueShiftMVP(path string) error {
 
 // Watch filesystem and capture changes
 func (dk *DiffKeeper) WatchLoop() error {
+	if dk.watcher == nil {
+		return fmt.Errorf("fsnotify watcher not initialized")
+	}
+
 	log.Printf("[Watcher] Watching %s for changes...", dk.stateDir)
 
-	// Add initial directory and all subdirectories
 	if err := dk.addWatchRecursive(dk.stateDir); err != nil {
 		return err
 	}
 
+	var done <-chan struct{}
+	if dk.monitorCtx != nil {
+		done = dk.monitorCtx.Done()
+	}
+
 	for {
 		select {
+		case <-done:
+			return nil
 		case event, ok := <-dk.watcher.Events:
 			if !ok {
 				return nil
@@ -327,9 +566,6 @@ func (dk *DiffKeeper) WatchLoop() error {
 				continue
 			}
 
-			// If the target is a directory, attach watchers to it (and its children)
-			// before any subsequent file writes occur. This ensures nested writes on
-			// Windows trigger events even when the directory tree is created in one call.
 			if info.IsDir() {
 				if err := dk.addWatchRecursive(event.Name); err != nil {
 					logDebug("[Watcher] Skipping recursive watch for %s: %v", event.Name, err)
@@ -383,6 +619,15 @@ func main() {
 		hashAlgo         string
 		dedupScope       string
 		snapshotInterval int
+
+		// eBPF monitoring configuration
+		enableEBPF       bool
+		profilerInterval time.Duration
+		enableProfiler   bool
+		autoInject       bool
+		ebpfProgramPath  string
+		fallbackFSNotify bool
+		injectorCommand  string
 	)
 
 	rootCmd := &cobra.Command{
@@ -425,6 +670,27 @@ Example:
 			if cmd.Flags().Changed("snapshot-interval") {
 				cfg.SnapshotInterval = snapshotInterval
 			}
+			if cmd.Flags().Changed("enable-ebpf") {
+				cfg.EBPF.Enable = enableEBPF
+			}
+			if cmd.Flags().Changed("profiler-interval") {
+				cfg.EBPF.ProfilerInterval = profilerInterval
+			}
+			if cmd.Flags().Changed("enable-profiler") {
+				cfg.EBPF.EnableProfiler = enableProfiler
+			}
+			if cmd.Flags().Changed("auto-inject") {
+				cfg.EBPF.AutoInject = autoInject
+			}
+			if cmd.Flags().Changed("ebpf-program") {
+				cfg.EBPF.ProgramPath = ebpfProgramPath
+			}
+			if cmd.Flags().Changed("fallback-fsnotify") {
+				cfg.EBPF.FallbackFSNotify = fallbackFSNotify
+			}
+			if cmd.Flags().Changed("injector-cmd") {
+				cfg.EBPF.InjectorCommand = injectorCommand
+			}
 
 			// Validate configuration
 			if err := cfg.Validate(); err != nil {
@@ -450,12 +716,13 @@ Example:
 				return fmt.Errorf("redshift failed: %w", err)
 			}
 
-			// Phase 2: Start watching in background
-			go func() {
-				if err := dk.WatchLoop(); err != nil {
-					log.Printf("[Watcher] Loop error: %v", err)
-				}
-			}()
+			// Phase 2: Start monitoring (eBPF or fsnotify) in background
+			monitorCtx, monitorCancel := context.WithCancel(context.Background())
+			defer monitorCancel()
+
+			if err := dk.StartMonitoring(monitorCtx); err != nil {
+				return fmt.Errorf("monitor initialization failed: %w", err)
+			}
 
 			// Phase 3: Execute the wrapped application
 			log.Printf("[Exec] Starting application: %v", args)
@@ -483,6 +750,15 @@ Example:
 	rootCmd.Flags().StringVar(&hashAlgo, "hash-algo", "sha256", "Hash algorithm for CAS (sha256 or blake3)")
 	rootCmd.Flags().StringVar(&dedupScope, "dedup-scope", "container", "Deduplication scope (container or cluster)")
 	rootCmd.Flags().IntVar(&snapshotInterval, "snapshot-interval", 10, "Create full snapshot every N versions")
+
+	// eBPF monitoring flags
+	rootCmd.Flags().BoolVar(&enableEBPF, "enable-ebpf", true, "Enable eBPF-based syscall interception (Linux kernels >= 4.18)")
+	rootCmd.Flags().DurationVar(&profilerInterval, "profiler-interval", 100*time.Millisecond, "Sampling interval for adaptive hot-path profiler")
+	rootCmd.Flags().BoolVar(&enableProfiler, "enable-profiler", true, "Enable adaptive eBPF profiler to predict hot paths")
+	rootCmd.Flags().BoolVar(&autoInject, "auto-inject", true, "Automatically inject DiffKeeper into new containers detected via CRI tracepoints")
+	rootCmd.Flags().StringVar(&ebpfProgramPath, "ebpf-program", "", "Path to precompiled eBPF object (defaults to bin/ebpf/diffkeeper.bpf.o)")
+	rootCmd.Flags().BoolVar(&fallbackFSNotify, "fallback-fsnotify", true, "Fallback to fsnotify watchers if eBPF initialization fails")
+	rootCmd.Flags().StringVar(&injectorCommand, "injector-cmd", "", "Command to execute for auto-injection events (container ID passed as first argument)")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

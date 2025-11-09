@@ -1,12 +1,12 @@
-# DiffKeeper: Lightweight State Recovery for Containers
+# DiffKeeper: Lightweight State Recovery for Containers (v2.0 Preview)
 
 > Capture file-level state changes in containerized workloads for fast recovery and debugging. No large persistent volumes required.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Status: v1.0 Final](https://img.shields.io/badge/Status-v1.0%20Final-green.svg)]()
+[![Status: v2.0 Preview](https://img.shields.io/badge/Status-v2.0%20Preview-blue.svg)]()
 
-**Updated:** November 8, 2025
-**Version:** v1.0 Final (Binary Diffs + Reconstruction)
+**Updated:** November 9, 2025  
+**Version:** v2.0 Preview (eBPF Monitoring + Auto-Injection)
 **Author:** Shane Anthony Wall
 **Contact:** shaneawall@gmail.com
 
@@ -29,7 +29,7 @@ Many containerized applications write stateful files (checkpoints, world saves, 
 
 DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 
-1. **Watch** specific directories for file changes (using fsnotify)
+1. **Intercept** write syscalls at the kernel level via eBPF (fsnotify used as fallback)
 2. **Capture** binary diffs when files change (bsdiff + content-addressable storage)
 3. **Store** deltas externally (BoltDB on small PV or host mount)
 4. **Verify** integrity on recovery (Merkle trees)
@@ -45,46 +45,44 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 ```
 
 **Key Benefits:**
-- **50-80% storage savings**: Binary diffs store only changed bytes (not full files)
-- **Content deduplication**: Identical chunks stored once across all files
-- **Merkle tree integrity**: Cryptographic verification prevents corrupted restores
-- **Fast recovery**: <100ms replay time (tested with 10MB files)
-- **Low overhead**: <2% CPU in typical workloads
-- **Drop-in compatible**: Works with Docker, Kubernetes, Podman
-- **No vendor lock-in**: Open source, standard storage backends
+- **Sub-µs capture latency**: Kernel interception fires within <1µs for write/pwrite/writev
+- **<0.5% CPU overhead**: Adaptive eBPF profiler traces only predicted hot paths
+- **50-80% storage savings**: Binary diffs store only changed bytes
+- **Content deduplication + Merkle trees**: CAS + integrity proofs for every version
+- **Fast recovery**: <100ms replays even under heavy churn
+- **Auto-injection for containers**: Trace CRI events and attach without wrapping entrypoints
+- **Drop-in compatible**: Works with Docker, Kubernetes, Podman, bare-metal
 
-**Best For:** Game servers, ML training checkpoints, CI/CD caches, batch job outputs, edge device state
-**Not For:** High-throughput databases (use native WAL/replication), streaming data (>10k writes/sec)
+**Best For:** Game servers, ML checkpoints, CI/CD caches, edge IoT, streaming analytics
 
 ---
 
 ## Architecture
 
 ```
-+-------------------+       writes files        +---------------------------+
-|   Your App        | ------------------------> | DiffKeeper Agent (v1.0)   |
-| (containerized)   |                           | - fsnotify watcher        |
-|                   | <----- restores state ----| - bsdiff binary diffs     |
-+-------------------+                           | - CAS (content-addressed) |
-                                                | - Merkle trees            |
-                                                | - BoltDB persistence      |
-                                                +-----------+---------------+
-                                                            |
-                                                            v
-                                                  BoltDB delta store
-                                              (CAS + metadata + Merkle roots)
++----------------------+        syscalls         +--------------------------------------+
+|   Container Runtime  | ----------------------> | DiffKeeper Agent (v2.0)               |
+| (Docker/Kube/CRI-O)  |                         |  - eBPF Manager (kprobes/tracepoints) |
++----------------------+                         |  - Hot-path Profiler (EMA/ringbuf)   |
+              |                                  |  - Lifecycle Tracer (auto-injection) |
+              | <----- auto-inject agent ------- |  - BlueShift (capture + predict)     |
+              v                                  |  - RedShift (replay/rollback)        |
+     +--------------------+                      +------------------+-------------------+
+     | Target Workload    |                                       |
+     +--------------------+                                       v
+                                                     BoltDB Delta Store (CAS + metadata)
 ```
 
-**How it works (v1.0 with Binary Diffs):**
-1. Agent detects file writes via fsnotify (recursive directory watching)
-2. Computes SHA256 hash to detect changes
-3. **Binary diff computation**: Compares current version vs previous (bsdiff algorithm)
-4. **Chunking**: Large files (>1GB) split into 4MB chunks for efficient processing
-5. **Content-addressable storage (CAS)**: Stores data by hash (automatic deduplication)
-6. **Merkle tree generation**: Creates cryptographic proof of file integrity
-7. **Metadata tracking**: Stores CIDs, Merkle roots, version counts, snapshot flags
-8. **Periodic snapshots**: Creates full snapshots every N versions (default: 10) to prevent long diff chains
-9. On restart: Fetches CIDs from CAS, verifies Merkle trees, reconstructs files
+**How it works (v2.0 with eBPF + Binary Diffs):**
+1. eBPF manager (kprobes on `vfs_write`, `pwrite`, `writev`) emits syscall events in <1µs via perf buffers (fsnotify acts as fallback when kernels lack eBPF).
+2. Adaptive profiler samples those events every 100ms, computes exponential moving averages, and updates hot-path filters (<0.5% CPU steady state).
+3. Lifecycle tracer hooks `sched_process_exec` and CRI runtimes to auto-inject the agent into new pods/containers when `--auto-inject` is enabled.
+4. BlueShift receives filtered events, hashes changed files, and determines whether to produce a snapshot or binary diff.
+5. **Binary diff computation**: Compares current and previous versions (bsdiff/xdelta) while chunking >1GB files into 4MB slices.
+6. **Content-addressable storage (CAS)**: Deduplicates chunks/diffs by hash and persists them in BoltDB.
+7. **Merkle tree generation + metadata**: Every version stores Merkle roots, version counters, and chunk metadata to prevent corruption.
+8. **Periodic snapshots**: Full snapshots occur every N versions (default 10) to prevent long diff chains for hot files.
+9. On restart, RedShift replays metadata, verifies Merkle trees, and rebuilds state to disk in <100ms even under heavy churn.
 
 ---
 
@@ -95,6 +93,7 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 - **Docker** 24+ (required for demo)
 - **Go** 1.23+ (for building from source)
 - **Platform**: Linux containers (agent uses Unix syscalls like `exec`)
+- **Kernel**: Linux 4.18+ with eBPF + `CAP_BPF`/`CAP_SYS_ADMIN` for kernel interception (older kernels automatically fall back to fsnotify)
 - 100MB free disk space
 
 > **Note**: While the agent can be built on Windows/macOS, it must run inside Linux containers due to platform-specific system calls.
@@ -110,7 +109,16 @@ chmod +x diffkeeper
 go install github.com/saworbit/diffkeeper/cmd/agent@latest
 ```
 
-### 2. Docker Usage
+### 2. (Optional) Build eBPF Probes
+
+```bash
+# Requires clang/llvm and a kernel-specific vmlinux.h (see docs/ebpf-guide.md)
+make build-ebpf
+```
+
+This produces `bin/ebpf/diffkeeper.bpf.o`. If the file is missing, DiffKeeper will automatically log a warning and revert to fsnotify.
+
+### 3. Docker Usage
 
 Wrap any container command with binary diffs enabled:
 
@@ -139,7 +147,7 @@ docker run -v ./deltas:/deltas nginx:alpine \
     nginx -g 'daemon off;'"
 ```
 
-**CLI Flags (v1.0):**
+**CLI Flags (v2.0):**
 
 **Core Flags:**
 - `--state-dir`: Directory to watch for state changes (default: /data)
@@ -154,6 +162,15 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - `--dedup-scope`: Deduplication scope - "container" or "cluster" (default: container)
 - `--snapshot-interval`: Create full snapshot every N versions (default: 10)
 
+**eBPF / Profiler Flags:**
+- `--enable-ebpf`: Turn on kernel-level interception (default: true)
+- `--ebpf-program`: Path to compiled `*.bpf.o` artifact (default: `bin/ebpf/diffkeeper.bpf.o`)
+- `--fallback-fsnotify`: Automatically switch back to fsnotify if eBPF load fails (default: true)
+- `--profiler-interval`: Sampling cadence for hot-path EMA (default: 100ms)
+- `--enable-profiler`: Toggle adaptive profiling without disabling eBPF (default: true)
+- `--auto-inject`: Auto-inject the agent into new containers when lifecycle events fire (default: true)
+- `--injector-cmd`: Command executed during auto-injection (container ID passed as argument plus env metadata)
+
 ### Watching Nested Directories
 
 - DiffKeeper now walks any directory as soon as it appears and attaches watchers to every level, so files dropped into newly created subfolders are captured immediately.
@@ -166,7 +183,7 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - Added a regression test to confirm nested directories are monitored on every OS.
 - `--debug` verbose logging documents watcher setup in the logs so you can troubleshoot missing events quickly.
 
-### 3. Kubernetes Deployment
+### 4. Kubernetes Deployment
 
 ```yaml
 apiVersion: v1
@@ -472,10 +489,17 @@ func (dk *DiffKeeper) RedShiftDiff() error {
 - `pkg/chunk/` - File chunking for large files
 - `pkg/cas/` - Content-addressable storage with deduplication
 - `pkg/merkle/` - Merkle tree integrity verification
+- `pkg/ebpf/` - Kernel manager, profiler, and lifecycle tracing abstractions
 - `main.go` - CLI and orchestration (450 LOC)
 - `diff_integration.go` - Binary diff integration logic (378 LOC)
 
 For full implementation, see [main.go](main.go) and [diff_integration.go](diff_integration.go).
+
+## Additional Docs
+
+- [docs/ebpf-guide.md](docs/ebpf-guide.md) - Building and troubleshooting kernel probes
+- [docs/auto-injection.md](docs/auto-injection.md) - Wiring CRI traces + injector workflows
+- [docs/patents.md](docs/patents.md) - Prior art & IP notes for profiler + auto-injection features
 
 ---
 

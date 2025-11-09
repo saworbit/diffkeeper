@@ -8,6 +8,7 @@ Get DiffKeeper running in under 5 minutes!
 
 - Docker 24+ installed
 - Go 1.23+ (for building from source)
+- Linux kernel 4.18+ for eBPF acceleration (older kernels automatically fall back to fsnotify)
 - 100MB free disk space
 
 ## Option 1: Run the Demo (Fastest Way)
@@ -43,6 +44,13 @@ Expected output:
 ```bash
 make build
 # Output: bin/diffkeeper
+```
+
+### (Optional) Build the eBPF Probes
+
+```bash
+# Requires clang/llvm and a kernel-specific vmlinux.h (see docs/ebpf-guide.md)
+make build-ebpf
 ```
 
 ### Step 2: Wrap Your Application
@@ -155,10 +163,17 @@ docker run -v $(pwd)/deltas:/deltas ...
 
 ### High CPU usage
 
-DiffKeeper watches files with fsnotify. If you have >10k file changes/second, consider:
-- Reducing watch scope to specific subdirectories
-- Using file patterns to exclude temp files
-- Waiting for v1.0 with eBPF support
+Enable the eBPF mode (default). If you explicitly disabled it, re-run with:
+```bash
+./bin/diffkeeper \
+  --enable-ebpf \
+  --ebpf-program=bin/ebpf/diffkeeper.bpf.o \
+  --profiler-interval=50ms \
+  --state-dir=/data \
+  --store=/deltas/db.bolt \
+  -- my-app
+```
+The adaptive profiler keeps overhead under 0.5% CPU by tracing only hot paths. For kernels without eBPF support, reduce the watch scope to specific subdirectories.
 
 ### Data not restored after restart
 

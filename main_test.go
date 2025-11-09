@@ -17,6 +17,7 @@ func newTestDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
 	// Use MVP config (diffs disabled) for backward compatibility
 	cfg := config.DefaultConfig()
 	cfg.EnableDiff = false
+	cfg.EBPF.Enable = false
 	return NewDiffKeeper(stateDir, storePath, cfg)
 }
 
@@ -24,6 +25,7 @@ func newTestDiffKeeper(stateDir, storePath string) (*DiffKeeper, error) {
 func newTestDiffKeeperWithDiffs(stateDir, storePath string) (*DiffKeeper, error) {
 	cfg := config.DefaultConfig()
 	cfg.EnableDiff = true
+	cfg.EBPF.Enable = false
 	return NewDiffKeeper(stateDir, storePath, cfg)
 }
 

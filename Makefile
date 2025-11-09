@@ -1,32 +1,47 @@
-.PHONY: build test demo clean docker docker-postgres
+.PHONY: build build-ebpf test demo clean docker docker-postgres
+
+EBPF_OBJ ?= bin/ebpf/diffkeeper.bpf.o
+EBPF_SRC ?= ebpf/diffkeeper.bpf.c
+CLANG    ?= clang
 
 # Build the agent binary
 build:
-	@echo "🔨 Building DiffKeeper agent..."
+	@echo "[build] Building DiffKeeper agent..."
 	go build -ldflags="-w -s" -o bin/diffkeeper main.go
-	@echo "✅ Built: bin/diffkeeper"
+	@echo "[build] Done: bin/diffkeeper"
+
+# Compile eBPF object (requires clang/llvm and ebpf/vmlinux.h)
+build-ebpf:
+	@if [ ! -f ebpf/vmlinux.h ]; then \
+		echo "[ebpf] Missing ebpf/vmlinux.h (generate via: bpftool btf dump file /sys/kernel/btf/vmlinux > ebpf/vmlinux.h)"; \
+		exit 1; \
+	fi
+	@echo "[ebpf] Compiling kernel probes..."
+	mkdir -p $(dir $(EBPF_OBJ))
+	$(CLANG) -O2 -g -target bpf -D__TARGET_ARCH_x86 -Iebpf -c $(EBPF_SRC) -o $(EBPF_OBJ)
+	@echo "[ebpf] Built: $(EBPF_OBJ)"
 
 # Run tests
 test:
-	@echo "🧪 Running tests..."
+	@echo "[test] Running tests..."
 	go test -v -race -coverprofile=coverage.out ./...
-	@echo "✅ Tests complete"
+	@echo "[test] Tests complete"
 
 # Build Postgres demo image
 docker-postgres:
-	@echo "🐳 Building DiffKeeper + Postgres demo..."
+	@echo "[docker] Building DiffKeeper + Postgres demo..."
 	docker build -t diffkeeper-postgres:latest -f Dockerfile.postgres .
-	@echo "✅ Built: diffkeeper-postgres:latest"
+	@echo "[docker] Built: diffkeeper-postgres:latest"
 
 # Run end-to-end demo
 demo: docker-postgres
-	@echo "🎬 Running demo..."
+	@echo "[demo] Running demo..."
 	bash demo.sh
 
 # Clean build artifacts
 clean:
-	@echo "🧹 Cleaning..."
+	@echo "[clean] Removing artifacts..."
 	rm -rf bin/ coverage.out
 	docker rm -f diffkeeper-postgres-demo 2>/dev/null || true
 	docker volume rm diffkeeper-deltas 2>/dev/null || true
-	@echo "✅ Clean complete"
+	@echo "[clean] Done"

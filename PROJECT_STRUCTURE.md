@@ -1,6 +1,6 @@
 # DiffKeeper Project Structure
 
-Complete file layout for the MVP implementation.
+Complete file layout for the v2.0 preview (eBPF monitoring + auto-injection).
 
 **Author:** Shane Anthony Wall | **Contact:** shaneawall@gmail.com
 
@@ -25,6 +25,12 @@ diffkeeper/
 |-- .github/
 |   |-- workflows/
 |       |-- ci.yml
+|-- docs/
+|   |-- ebpf-guide.md
+|   |-- auto-injection.md
+|   |-- patents.md
+|-- ebpf/
+|   |-- diffkeeper.bpf.c
 |-- bin/                # build output (gitignored)
 |-- test-data/          # sample input fixtures
 |-- test-deltas/        # sample delta output
@@ -36,12 +42,12 @@ diffkeeper/
 
 ### Core Files
 
-**main.go** (~320 lines)
-- `DiffKeeper` struct - core agent wiring (BoltDB + fsnotify)
+**main.go** (~500 lines)
+- `DiffKeeper` struct - orchestrates BoltDB, CAS, diff engine, and monitoring backends (eBPF-first with fsnotify fallback)
+- `StartMonitoring()` - loads eBPF manager, profiler, lifecycle tracer, or falls back to fsnotify
 - `addWatchRecursive()` - attaches watchers to nested directories on every platform
-- `RedShift()` - restores files from stored deltas
-- `BlueShift()` - captures updates with compression and hashing
-- Cobra CLI with `--debug` flag and process hand-off via `syscall.Exec`
+- `RedShift()` / `BlueShift()` - restore/capture with diff + CAS
+- Cobra CLI now includes eBPF/auto-injection flags plus process hand-off via `syscall.Exec`
 
 **main_test.go** (~900 lines)
 - Unit tests for compression, lifecycle, multi-file restore, and large files
@@ -55,6 +61,7 @@ diffkeeper/
 module github.com/saworbit/diffkeeper
 go 1.23
 require (
+    github.com/cilium/ebpf v0.13.0
     github.com/fsnotify/fsnotify v1.7.0
     github.com/spf13/cobra v1.8.1
     go.etcd.io/bbolt v1.3.10
@@ -67,6 +74,7 @@ require (
 
 **Makefile** - Build targets:
 - `make build` - Local binary
+- `make build-ebpf` - Compile eBPF probes (requires clang + ebpf/vmlinux.h)
 - `make test` - Run tests with coverage
 - `make docker-postgres` - Build the demo Postgres image
 - `make demo` - Run the end-to-end demo (depends on the demo image)
@@ -204,13 +212,14 @@ make demo
 go run main.go --debug --state-dir=./test-data --store=./test.bolt -- cat test-data/example.txt
 ```
 
-## Next Steps for v0.2
+## Next Steps for v2.1
 
 Roadmap items live in [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md). Highlights include:
-- Binary diff support for lower storage overhead
+- Expanded profiler models (multi-armed bandit + WASM hints)
+- Operator/DaemonSet for cluster-wide auto-injection
 - Pluggable storage backends and remote sinks
 - Standalone replay tooling (`cmd/replay`) for offline restores
-- Additional observability (metrics, debug utilities)
+- Metrics + tracing exports (Prometheus / OpenTelemetry)
 
 ## Questions?
 
@@ -221,3 +230,7 @@ Roadmap items live in [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md)
 **Maintainer:** Shane Anthony Wall
 
 
+- `pkg/ebpf/` - Go manager + profiler + lifecycle tracer
+- `ebpf/diffkeeper.bpf.c` - Kernel probes compiled via `make build-ebpf`
+- `docs/ebpf-guide.md` - Build + troubleshooting doc
+- `docs/auto-injection.md` - Injector workflows
