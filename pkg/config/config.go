@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -49,6 +50,14 @@ type EBPFConfig struct {
 	CollectLifecycle bool
 	EventBufferSize  int
 	LifecycleBufSize int
+	BTF              BTFConfig
+}
+
+// BTFConfig controls CO-RE relocations and BTFHub downloads
+type BTFConfig struct {
+	CacheDir      string
+	AllowDownload bool
+	HubMirror     string
 }
 
 // DefaultConfig returns the default configuration
@@ -166,7 +175,19 @@ func defaultEBPFConfig() EBPFConfig {
 		CollectLifecycle: true,
 		EventBufferSize:  4096,
 		LifecycleBufSize: 256,
+		BTF: BTFConfig{
+			CacheDir:      defaultBTFCacheDir(),
+			AllowDownload: true,
+			HubMirror:     "https://github.com/aquasecurity/btfhub-archive/raw/main",
+		},
 	}
+}
+
+func defaultBTFCacheDir() string {
+	if _, err := os.Stat("/var/cache"); err == nil || os.IsPermission(err) {
+		return "/var/cache/diffkeeper/btf"
+	}
+	return filepath.Join(os.TempDir(), "diffkeeper", "btf")
 }
 
 func loadEBPFConfigFromEnv(cfg EBPFConfig) EBPFConfig {
@@ -217,6 +238,16 @@ func loadEBPFConfigFromEnv(cfg EBPFConfig) EBPFConfig {
 		}
 	}
 
+	if cacheDir := os.Getenv("DIFFKEEPER_BTF_CACHE_DIR"); cacheDir != "" {
+		cfg.BTF.CacheDir = cacheDir
+	}
+	if allow := os.Getenv("DIFFKEEPER_BTF_ALLOW_DOWNLOAD"); allow != "" {
+		cfg.BTF.AllowDownload = allow == "1" || allow == "true" || allow == "TRUE"
+	}
+	if mirror := os.Getenv("DIFFKEEPER_BTF_MIRROR"); mirror != "" {
+		cfg.BTF.HubMirror = mirror
+	}
+
 	return cfg
 }
 
@@ -239,6 +270,20 @@ func (c EBPFConfig) Validate() error {
 	}
 	if c.LifecycleBufSize <= 0 {
 		return fmt.Errorf("lifecycle buffer size must be positive")
+	}
+	if err := c.BTF.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Validate ensures BTF config is usable for CO-RE relocations
+func (c BTFConfig) Validate() error {
+	if c.CacheDir == "" {
+		return fmt.Errorf("btf cache directory must be provided")
+	}
+	if c.HubMirror == "" {
+		return fmt.Errorf("btfhub mirror must be provided")
 	}
 	return nil
 }

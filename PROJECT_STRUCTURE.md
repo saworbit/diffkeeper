@@ -26,9 +26,11 @@ diffkeeper/
 |   |-- workflows/
 |       |-- ci.yml
 |-- docs/
-|   |-- ebpf-guide.md
 |   |-- auto-injection.md
+|   |-- btf-core-guide.md
+|   |-- ebpf-guide.md
 |   |-- patents.md
+|   |-- supported-kernels.md
 |-- ebpf/
 |   |-- diffkeeper.bpf.c
 |-- bin/                # build output (gitignored)
@@ -62,6 +64,7 @@ module github.com/saworbit/diffkeeper
 go 1.23
 require (
     github.com/cilium/ebpf v0.13.0
+    github.com/ulikunitz/xz v0.5.15
     github.com/fsnotify/fsnotify v1.7.0
     github.com/spf13/cobra v1.8.1
     go.etcd.io/bbolt v1.3.10
@@ -69,6 +72,8 @@ require (
 ```
 
 **go.sum** - Auto-generated dependency checksums
+
+**pkg/config/config.go** - `EBPFConfig` now includes `BTFConfig` (cache dir, download toggle, mirror URL) so operators can control BTFHub usage and CO-RE portability directly from CLI/env flags.
 
 ### Build & CI
 
@@ -230,7 +235,9 @@ Roadmap items live in [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md)
 **Maintainer:** Shane Anthony Wall
 
 
-- `pkg/ebpf/` - Go manager + profiler + lifecycle tracer
+- `pkg/ebpf/` - Go manager, BTF loader, profiler, and lifecycle tracer
 - `ebpf/diffkeeper.bpf.c` - Kernel probes compiled via `make build-ebpf`
 - `docs/ebpf-guide.md` - Build + troubleshooting doc
+- `docs/btf-core-guide.md` - BTFHub + CO-RE rollout checklist
+- `docs/supported-kernels.md` - Distro/kernel compatibility snapshot
 - `docs/auto-injection.md` - Injector workflows

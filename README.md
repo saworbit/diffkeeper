@@ -47,6 +47,7 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 **Key Benefits:**
 - **Sub-µs capture latency**: Kernel interception fires within <1µs for write/pwrite/writev
 - **<0.5% CPU overhead**: Adaptive eBPF profiler traces only predicted hot paths
+- **Compile once, run everywhere**: CO-RE probes + BTFHub downloads adapt to mixed kernels (4.18+) with no per-node rebuilds
 - **50-80% storage savings**: Binary diffs store only changed bytes
 - **Content deduplication + Merkle trees**: CAS + integrity proofs for every version
 - **Fast recovery**: <100ms replays even under heavy churn
@@ -84,6 +85,8 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 8. **Periodic snapshots**: Full snapshots occur every N versions (default 10) to prevent long diff chains for hot files.
 9. On restart, RedShift replays metadata, verifies Merkle trees, and rebuilds state to disk in <100ms even under heavy churn.
 
+**BTF/CO-RE Portability:** DiffKeeper automatically looks for `/sys/kernel/btf/vmlinux`, falls back to a cached copy in `--btf-cache-dir`, or downloads a tailored BTF from [BTFHub-Archive](https://github.com/aquasecurity/btfhub-archive). The loader feeds that spec into CO-RE programs so the same `diffkeeper.bpf.o` runs across Ubuntu, CentOS, Fedora, Amazon Linux, and other kernels ≥4.18 without recompilation. See [docs/btf-core-guide.md](docs/btf-core-guide.md) for setup details and [docs/supported-kernels.md](docs/supported-kernels.md) for the current compatibility matrix.
+
 ---
 
 ## Quick Start
@@ -117,6 +120,8 @@ make build-ebpf
 ```
 
 This produces `bin/ebpf/diffkeeper.bpf.o`. If the file is missing, DiffKeeper will automatically log a warning and revert to fsnotify.
+
+> BTF data is fetched on-demand. Override the cache directory with `--btf-cache-dir`, point to an internal mirror via `--btfhub-mirror`, or disable downloads entirely with `--disable-btfhub-download` (requires `/sys/kernel/btf/vmlinux`).
 
 ### 3. Docker Usage
 
@@ -170,6 +175,9 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - `--enable-profiler`: Toggle adaptive profiling without disabling eBPF (default: true)
 - `--auto-inject`: Auto-inject the agent into new containers when lifecycle events fire (default: true)
 - `--injector-cmd`: Command executed during auto-injection (container ID passed as argument plus env metadata)
+- `--btf-cache-dir`: Cache directory for downloaded BTF specs (default: `/var/cache/diffkeeper/btf`)
+- `--btfhub-mirror`: Mirror URL for BTFHub-Archive assets (default: official GitHub mirror)
+- `--disable-btfhub-download`: Skip remote downloads (requires `/sys/kernel/btf/vmlinux`; otherwise falls back to fsnotify)
 
 ### Watching Nested Directories
 
@@ -499,6 +507,8 @@ For full implementation, see [main.go](main.go) and [diff_integration.go](diff_i
 
 - [docs/ebpf-guide.md](docs/ebpf-guide.md) - Building and troubleshooting kernel probes
 - [docs/auto-injection.md](docs/auto-injection.md) - Wiring CRI traces + injector workflows
+- [docs/btf-core-guide.md](docs/btf-core-guide.md) - Using BTFHub downloads and CO-RE in production
+- [docs/supported-kernels.md](docs/supported-kernels.md) - Reference list of tested distros/kernels
 - [docs/patents.md](docs/patents.md) - Prior art & IP notes for profiler + auto-injection features
 
 ---

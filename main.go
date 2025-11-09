@@ -621,13 +621,16 @@ func main() {
 		snapshotInterval int
 
 		// eBPF monitoring configuration
-		enableEBPF       bool
-		profilerInterval time.Duration
-		enableProfiler   bool
-		autoInject       bool
-		ebpfProgramPath  string
-		fallbackFSNotify bool
-		injectorCommand  string
+		enableEBPF         bool
+		profilerInterval   time.Duration
+		enableProfiler     bool
+		autoInject         bool
+		ebpfProgramPath    string
+		fallbackFSNotify   bool
+		injectorCommand    string
+		btfCacheDir        string
+		btfHubMirror       string
+		disableBTFDownload bool
 	)
 
 	rootCmd := &cobra.Command{
@@ -690,6 +693,15 @@ Example:
 			}
 			if cmd.Flags().Changed("injector-cmd") {
 				cfg.EBPF.InjectorCommand = injectorCommand
+			}
+			if cmd.Flags().Changed("btf-cache-dir") {
+				cfg.EBPF.BTF.CacheDir = btfCacheDir
+			}
+			if cmd.Flags().Changed("btfhub-mirror") {
+				cfg.EBPF.BTF.HubMirror = btfHubMirror
+			}
+			if cmd.Flags().Changed("disable-btfhub-download") {
+				cfg.EBPF.BTF.AllowDownload = !disableBTFDownload
 			}
 
 			// Validate configuration
@@ -759,6 +771,9 @@ Example:
 	rootCmd.Flags().StringVar(&ebpfProgramPath, "ebpf-program", "", "Path to precompiled eBPF object (defaults to bin/ebpf/diffkeeper.bpf.o)")
 	rootCmd.Flags().BoolVar(&fallbackFSNotify, "fallback-fsnotify", true, "Fallback to fsnotify watchers if eBPF initialization fails")
 	rootCmd.Flags().StringVar(&injectorCommand, "injector-cmd", "", "Command to execute for auto-injection events (container ID passed as first argument)")
+	rootCmd.Flags().StringVar(&btfCacheDir, "btf-cache-dir", "/var/cache/diffkeeper/btf", "Directory for cached BTF specs used during CO-RE relocations")
+	rootCmd.Flags().StringVar(&btfHubMirror, "btfhub-mirror", "https://github.com/aquasecurity/btfhub-archive/raw/main", "Base URL for BTFHub-Archive downloads (override for private mirrors)")
+	rootCmd.Flags().BoolVar(&disableBTFDownload, "disable-btfhub-download", false, "Disable automatic BTFHub downloads (requires kernel-provided BTF)")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

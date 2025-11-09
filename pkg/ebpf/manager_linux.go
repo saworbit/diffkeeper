@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/ringbuf"
@@ -27,6 +28,7 @@ type kernelManager struct {
 	cfg       *config.EBPFConfig
 	stateDir  string
 	objects   *ebpf.Collection
+	btfSpec   *btf.Spec
 	links     []link.Link
 	perfRd    *perf.Reader
 	lifecycle *ringbuf.Reader
@@ -47,9 +49,29 @@ func NewManager(stateDir string, cfg *config.EBPFConfig) (Manager, error) {
 		return nil, fmt.Errorf("ebpf configuration is required")
 	}
 
+	var (
+		btfSpec   *btf.Spec
+		btfSource string
+		err       error
+	)
+
+	if loader := NewBTFLoader(cfg); loader != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		btfSpec, btfSource, err = loader.LoadSpec(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("btf load failed: %w", err)
+		}
+		if btfSource != "" {
+			log.Printf("[eBPF] Loaded BTF spec from %s", btfSource)
+		}
+	}
+
 	m := &kernelManager{
 		cfg:      cfg,
 		stateDir: stateDir,
+		btfSpec:  btfSpec,
 		events:   make(chan Event, max(cfg.EventBufferSize, 1024)),
 	}
 
@@ -82,7 +104,14 @@ func (m *kernelManager) init() error {
 		return fmt.Errorf("load eBPF spec: %w", err)
 	}
 
-	objs, err := ebpf.NewCollection(spec)
+	var opts ebpf.CollectionOptions
+	if m.btfSpec != nil {
+		opts.Programs = ebpf.ProgramOptions{
+			KernelTypes: m.btfSpec,
+		}
+	}
+
+	objs, err := spec.Load(&opts)
 	if err != nil {
 		return fmt.Errorf("init eBPF collection: %w", err)
 	}
@@ -373,6 +402,10 @@ func (m *kernelManager) Close() error {
 
 	if m.objects != nil {
 		m.objects.Close()
+	}
+
+	if m.btfSpec != nil {
+		m.btfSpec.Close()
 	}
 
 	m.running = false

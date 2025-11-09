@@ -9,6 +9,7 @@ require (
 	github.com/gabstv/go-bsdiff v1.0.5
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/spf13/cobra v1.8.1
+	github.com/ulikunitz/xz v0.5.15
 	go.etcd.io/bbolt v1.3.10
 )
 

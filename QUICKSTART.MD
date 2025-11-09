@@ -184,6 +184,7 @@ The adaptive profiler keeps overhead under 0.5% CPU by tracing only hot paths. F
 ## Next Steps
 
 - **Production use**: Review [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) and [K8S_TESTING_GUIDE.md](K8S_TESTING_GUIDE.md) for deployment patterns and operational tips.
+- **BTF/CO-RE setup**: Read [docs/btf-core-guide.md](docs/btf-core-guide.md) to configure BTFHub caching and CO-RE portability before rolling out to mixed-kernel clusters.
 - **Contribute**: Check [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) for open work items and priorities.
 - **Report issues**: [GitHub Issues](https://github.com/saworbit/diffkeeper/issues)
 - **Ask questions**: shaneawall@gmail.com
