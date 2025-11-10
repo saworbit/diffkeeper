@@ -157,6 +157,12 @@ docker run -it \
     your-app-start"
 ```
 
+**Official release image (multi-arch v1.0.0):**
+```bash
+docker run --rm -v ./data:/state -v ./deltas:/deltas ghcr.io/saworbit/diffkeeper:v1.0.0 \
+  --state-dir=/state --store=/deltas/db.bolt --enable-diff=true your-app
+```
+
 > Need verbose logs while troubleshooting? Append `--debug` before the wrapped command to emit watcher events and delta details:
 > `./diffkeeper --debug --state-dir=...`
 
