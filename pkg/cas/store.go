@@ -349,14 +349,13 @@ func (c *CASStore) GetStats() (CASStats, error) {
 
 		// Count total references and unique files
 		if err := refsBucket.ForEach(func(k, v []byte) error {
-			cid := string(k)
 			var refCount CASRefCount
 			if err := json.Unmarshal(v, &refCount); err != nil {
 				return err
 			}
 
 			if refCount.Refs > 0 {
-				referencedCIDs[cid] = true
+				referencedCIDs[string(k)] = true
 				stats.TotalRefs += refCount.Refs
 				for _, f := range refCount.Files {
 					fileSet[f] = true
@@ -375,8 +374,7 @@ func (c *CASStore) GetStats() (CASStats, error) {
 			stats.TotalObjects++
 			stats.TotalSize += int64(len(v))
 
-			cid := string(k)
-			if !referencedCIDs[cid] {
+			if !referencedCIDs[string(k)] {
 				stats.UnreferencedObjs++
 			}
 

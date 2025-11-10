@@ -492,13 +492,15 @@ func (dk *DiffKeeper) blueShiftMVP(path string) error {
 
 	// Check if changed
 	var prevHash string
-	dk.db.View(func(tx *bbolt.Tx) error {
+	if err := dk.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BucketHashes))
 		if v := b.Get([]byte(relPath)); v != nil {
 			prevHash = string(v)
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("hash lookup failed for %s: %w", relPath, err)
+	}
 
 	if prevHash == newHash {
 		return nil // No change

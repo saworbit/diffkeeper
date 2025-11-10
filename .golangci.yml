@@ -1,11 +1,7 @@
 run:
   timeout: 5m
-  tests: false
+  tests: true
 
 output:
-  format: colored-line-number
-
-linters-settings:
-  errcheck:
-    exclude-functions:
-      - (*go.etcd.io/bbolt.Bucket).ForEach
+  formats:
+    - colored-line-number
