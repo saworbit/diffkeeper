@@ -10,8 +10,8 @@ RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source
-COPY main.go ./
+# Copy full source after deps so local packages are available
+COPY . .
 
 # Build static binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \

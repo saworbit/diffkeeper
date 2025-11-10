@@ -1,0 +1,15 @@
+.git
+.github
+.vscode
+.idea
+bin
+coverage.out
+coverage.html
+*.exe
+*.test
+*.out
+test-data
+test-deltas
+benchmark_results.txt
+diffkeeper.exe
+*.bolt
