@@ -29,6 +29,34 @@ func newTestDiffKeeperWithDiffs(stateDir, storePath string) (*DiffKeeper, error)
 	return NewDiffKeeper(stateDir, storePath, cfg)
 }
 
+func mustWriteFile(tb testing.TB, path string, data []byte) {
+	tb.Helper()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		tb.Fatalf("os.WriteFile(%s) failed: %v", path, err)
+	}
+}
+
+func mustMkdirAll(tb testing.TB, path string) {
+	tb.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		tb.Fatalf("os.MkdirAll(%s) failed: %v", path, err)
+	}
+}
+
+func mustBlueShift(tb testing.TB, dk *DiffKeeper, path string) {
+	tb.Helper()
+	if err := dk.BlueShift(path); err != nil {
+		tb.Fatalf("BlueShift(%s) failed: %v", path, err)
+	}
+}
+
+func mustRemoveAll(tb testing.TB, path string) {
+	tb.Helper()
+	if err := os.RemoveAll(path); err != nil {
+		tb.Fatalf("RemoveAll(%s) failed: %v", path, err)
+	}
+}
+
 func viewDB(tb testing.TB, db *bbolt.DB, fn func(*bbolt.Tx) error) {
 	tb.Helper()
 	if err := db.View(fn); err != nil {
@@ -897,7 +925,7 @@ func TestReadOnlyScenarios(t *testing.T) {
 		if err == nil {
 			// If opened successfully, try to write - should fail
 			testFile2 := filepath.Join(stateDir, "another.txt")
-			os.WriteFile(testFile2, []byte("test"), 0644)
+			mustWriteFile(t, testFile2, []byte("test"))
 
 			err = dk2.BlueShift(testFile2)
 			if err == nil {
@@ -916,7 +944,7 @@ func BenchmarkBlueShift(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "bench.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
@@ -930,8 +958,8 @@ func BenchmarkBlueShift(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		content := append(testContent, byte(i%256))
-		os.WriteFile(testFile, content, 0644)
-		dk.BlueShift(testFile)
+		mustWriteFile(b, testFile, content)
+		mustBlueShift(b, dk, testFile)
 	}
 }
 
@@ -940,7 +968,7 @@ func BenchmarkRedShift(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "bench.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
@@ -952,14 +980,14 @@ func BenchmarkRedShift(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		testFile := filepath.Join(stateDir, "file_"+string(rune(i))+".txt")
 		content := []byte("Content for file " + string(rune(i)))
-		os.WriteFile(testFile, content, 0644)
-		dk.BlueShift(testFile)
+		mustWriteFile(b, testFile, content)
+		mustBlueShift(b, dk, testFile)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		os.RemoveAll(stateDir)
-		os.MkdirAll(stateDir, 0755)
+		mustRemoveAll(b, stateDir)
+		mustMkdirAll(b, stateDir)
 		if err := dk.RedShift(); err != nil {
 			b.Fatalf("RedShift failed: %v", err)
 		}
