@@ -23,6 +23,13 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+
     - name: Cache Go modules
       uses: actions/cache@v4
       with:
