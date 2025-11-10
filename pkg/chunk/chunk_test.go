@@ -7,39 +7,39 @@ import (
 
 func TestSplitFile(t *testing.T) {
 	tests := []struct {
-		name          string
-		data          []byte
-		chunkSize     int
+		name           string
+		data           []byte
+		chunkSize      int
 		expectedChunks int
 	}{
 		{
-			name:          "empty file",
-			data:          []byte{},
-			chunkSize:     100,
+			name:           "empty file",
+			data:           []byte{},
+			chunkSize:      100,
 			expectedChunks: 0,
 		},
 		{
-			name:          "file smaller than chunk size",
-			data:          []byte("hello"),
-			chunkSize:     100,
+			name:           "file smaller than chunk size",
+			data:           []byte("hello"),
+			chunkSize:      100,
 			expectedChunks: 1,
 		},
 		{
-			name:          "file exactly chunk size",
-			data:          bytes.Repeat([]byte("A"), 100),
-			chunkSize:     100,
+			name:           "file exactly chunk size",
+			data:           bytes.Repeat([]byte("A"), 100),
+			chunkSize:      100,
 			expectedChunks: 1,
 		},
 		{
-			name:          "file larger than chunk size",
-			data:          bytes.Repeat([]byte("A"), 250),
-			chunkSize:     100,
+			name:           "file larger than chunk size",
+			data:           bytes.Repeat([]byte("A"), 250),
+			chunkSize:      100,
 			expectedChunks: 3,
 		},
 		{
-			name:          "invalid chunk size",
-			data:          []byte("hello"),
-			chunkSize:     -1,
+			name:           "invalid chunk size",
+			data:           []byte("hello"),
+			chunkSize:      -1,
 			expectedChunks: 1, // Should return single chunk
 		},
 	}
@@ -105,10 +105,10 @@ func TestShouldChunk(t *testing.T) {
 		fileSize int64
 		want     bool
 	}{
-		{"small file", 100 * 1024, false},               // 100KB
-		{"medium file", 500 * 1024 * 1024, false},       // 500MB
+		{"small file", 100 * 1024, false},         // 100KB
+		{"medium file", 500 * 1024 * 1024, false}, // 500MB
 		{"exactly threshold", threshold, false},
-		{"large file", 2 * 1024 * 1024 * 1024, true},    // 2GB
+		{"large file", 2 * 1024 * 1024 * 1024, true},       // 2GB
 		{"very large file", 10 * 1024 * 1024 * 1024, true}, // 10GB
 	}
 
@@ -236,7 +236,7 @@ func TestVerifyChunkIntegrity(t *testing.T) {
 // Benchmark tests
 func BenchmarkSplitFile_1MB(b *testing.B) {
 	data := bytes.Repeat([]byte("A"), 1024*1024) // 1MB
-	chunkSize := 4 * 1024 * 1024                  // 4MB
+	chunkSize := 4 * 1024 * 1024                 // 4MB
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -246,7 +246,7 @@ func BenchmarkSplitFile_1MB(b *testing.B) {
 
 func BenchmarkSplitFile_100MB(b *testing.B) {
 	data := bytes.Repeat([]byte("A"), 100*1024*1024) // 100MB
-	chunkSize := 4 * 1024 * 1024                      // 4MB
+	chunkSize := 4 * 1024 * 1024                     // 4MB
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
