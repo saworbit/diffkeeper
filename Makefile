@@ -7,7 +7,7 @@ EBPF_HDR := $(wildcard ebpf/*.h ebpf/include/bpf/*.h)
 
 build: build-ebpf
 	@echo "[build] Building DiffKeeper agent..."
-	go build -ldflags="-w -s" -o bin/diffkeeper main.go
+	go build -ldflags="-w -s" -o bin/diffkeeper .
 	@echo "[build] Done: bin/diffkeeper"
 
 build-ebpf: $(EBPF_OBJ)
