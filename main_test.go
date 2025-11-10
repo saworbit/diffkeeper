@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourorg/diffkeeper/pkg/config"
+	"github.com/saworbit/diffkeeper/pkg/config"
 	"go.etcd.io/bbolt"
 )
 

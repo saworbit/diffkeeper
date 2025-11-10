@@ -1,4 +1,4 @@
-module github.com/yourorg/diffkeeper
+module github.com/saworbit/diffkeeper
 
 go 1.23
 

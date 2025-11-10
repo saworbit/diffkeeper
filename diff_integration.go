@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/yourorg/diffkeeper/pkg/chunk"
-	"github.com/yourorg/diffkeeper/pkg/merkle"
+	"github.com/saworbit/diffkeeper/pkg/chunk"
+	"github.com/saworbit/diffkeeper/pkg/merkle"
 	"go.etcd.io/bbolt"
 )
 

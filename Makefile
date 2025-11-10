@@ -36,7 +36,7 @@ docker-postgres:
 
 docker:
 	@echo "[docker] Building multi-arch image..."
-	docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/yourorg/diffkeeper:latest .
+	docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/saworbit/diffkeeper:latest .
 	@echo "[docker] Multi-arch image ready (not pushed)"
 
 # Run end-to-end demo

@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/saworbit/diffkeeper/pkg/config"
 	"github.com/ulikunitz/xz"
-	"github.com/yourorg/diffkeeper/pkg/config"
 )
 
 func TestBuildBTFHubURL(t *testing.T) {

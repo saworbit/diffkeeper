@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/saworbit/diffkeeper/pkg/cas"
+	"github.com/saworbit/diffkeeper/pkg/config"
+	"github.com/saworbit/diffkeeper/pkg/diff"
+	"github.com/saworbit/diffkeeper/pkg/ebpf"
+	"github.com/saworbit/diffkeeper/pkg/merkle"
 	"github.com/spf13/cobra"
-	"github.com/yourorg/diffkeeper/pkg/cas"
-	"github.com/yourorg/diffkeeper/pkg/config"
-	"github.com/yourorg/diffkeeper/pkg/diff"
-	"github.com/yourorg/diffkeeper/pkg/ebpf"
-	"github.com/yourorg/diffkeeper/pkg/merkle"
 	"go.etcd.io/bbolt"
 )
 

@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf/btf"
+	"github.com/saworbit/diffkeeper/pkg/config"
 	"github.com/ulikunitz/xz"
-	"github.com/yourorg/diffkeeper/pkg/config"
 )
 
 const (

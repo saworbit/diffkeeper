@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourorg/diffkeeper/pkg/config"
+	"github.com/saworbit/diffkeeper/pkg/config"
 	"go.etcd.io/bbolt"
 )
 
@@ -100,7 +100,7 @@ func TestBinaryDiffsEndToEnd(t *testing.T) {
 		t.Errorf("Restored content doesn't match.\nExpected: %s\nGot: %s", v2Content, restored)
 	}
 
-	t.Log("✅ End-to-end binary diff test passed")
+	t.Log("âœ… End-to-end binary diff test passed")
 }
 
 // TestMigrationMVPToDiff tests migration from MVP to binary diffs
@@ -199,7 +199,7 @@ func TestMigrationMVPToDiff(t *testing.T) {
 		t.Errorf("Restored content doesn't match after migration.\nExpected: %s\nGot: %s", testContent, restored)
 	}
 
-	t.Log("✅ Migration test passed")
+	t.Log("âœ… Migration test passed")
 }
 
 // TestMultiVersionDiffChain tests creating and recovering multiple versions
@@ -284,7 +284,7 @@ func TestMultiVersionDiffChain(t *testing.T) {
 		t.Errorf("Restored content doesn't match final version.\nExpected: %s\nGot: %s", versions[14], restored)
 	}
 
-	t.Logf("✅ Multi-version diff chain test passed (%d versions)", len(versions))
+	t.Logf("âœ… Multi-version diff chain test passed (%d versions)", len(versions))
 }
 
 // TestLargeFileChunking tests chunking for large files
@@ -379,7 +379,7 @@ func TestLargeFileChunking(t *testing.T) {
 		t.Error("Restored large file content doesn't match")
 	}
 
-	t.Logf("✅ Large file chunking test passed (10MB file, %d chunks, recovered in %v)", len(meta.CIDs), duration)
+	t.Logf("âœ… Large file chunking test passed (10MB file, %d chunks, recovered in %v)", len(meta.CIDs), duration)
 }
 
 // TestMerkleIntegrity tests Merkle tree integrity verification
@@ -433,7 +433,7 @@ func TestMerkleIntegrity(t *testing.T) {
 		t.Error("Merkle verification should fail with corrupted root")
 	}
 
-	t.Log("✅ Merkle integrity test passed")
+	t.Log("âœ… Merkle integrity test passed")
 }
 
 // TestCASDeduplication tests content-addressable storage deduplication
@@ -494,7 +494,7 @@ func TestCASDeduplication(t *testing.T) {
 		t.Errorf("Expected 2 references after storing 2 identical files, got %d", statsAfter.TotalRefs)
 	}
 
-	t.Logf("✅ CAS deduplication test passed (1 object, 2 references)")
+	t.Logf("âœ… CAS deduplication test passed (1 object, 2 references)")
 }
 
 // TestSnapshotInterval tests periodic snapshot creation
@@ -546,5 +546,5 @@ func TestSnapshotInterval(t *testing.T) {
 		t.Errorf("Expected version count 12, got %d", meta.VersionCount)
 	}
 
-	t.Logf("✅ Snapshot interval test passed (12 versions, interval=5)")
+	t.Logf("âœ… Snapshot interval test passed (12 versions, interval=5)")
 }

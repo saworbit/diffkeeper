@@ -17,7 +17,7 @@ import (
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
-	"github.com/yourorg/diffkeeper/pkg/config"
+	"github.com/saworbit/diffkeeper/pkg/config"
 )
 
 var _ Manager = (*kernelManager)(nil)

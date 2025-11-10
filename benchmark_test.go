@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yourorg/diffkeeper/pkg/config"
+	"github.com/saworbit/diffkeeper/pkg/config"
 )
 
 // BenchmarkStorageMVP benchmarks storage usage with MVP (full file compression)

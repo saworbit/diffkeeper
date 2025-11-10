@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yourorg/diffkeeper/pkg/config"
+	"github.com/saworbit/diffkeeper/pkg/config"
 )
 
 // TestDiffChain20Plus tests binary diff chains with 25+ versions
@@ -104,7 +104,7 @@ func TestDiffChain20Plus(t *testing.T) {
 		t.Logf("Got: %s...", string(recovered[:min(100, len(recovered))]))
 	}
 
-	t.Logf("✅ Diff chain test passed (25 versions, 3 snapshots at v1/v10/v20)")
+	t.Logf("âœ… Diff chain test passed (25 versions, 3 snapshots at v1/v10/v20)")
 }
 
 // TestDiffChainStorageSavings measures storage efficiency with diff chains
@@ -189,7 +189,7 @@ func TestDiffChainStorageSavings(t *testing.T) {
 		t.Logf("Warning: Storage savings (%.1f%%) less than expected (>30%%)", savingsPercent)
 	}
 
-	t.Logf("✅ Storage savings test complete")
+	t.Logf("âœ… Storage savings test complete")
 }
 
 func min(a, b int) int {

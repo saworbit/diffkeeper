@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourorg/diffkeeper/pkg/config"
+	"github.com/saworbit/diffkeeper/pkg/config"
 )
 
 // Profiler performs lightweight EMA calculations to predict frequently modified paths
