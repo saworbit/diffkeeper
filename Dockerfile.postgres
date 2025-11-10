@@ -2,9 +2,15 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /build
-COPY go.mod go.sum main.go ./
-RUN go mod download && \
-    CGO_ENABLED=0 go build -ldflags="-w -s" -o diffkeeper .
+
+# Copy module definition first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy full source so local packages resolve
+COPY . .
+
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o diffkeeper .
 
 # Final image with Postgres
 FROM postgres:16-alpine
@@ -17,7 +23,7 @@ RUN mkdir -p /deltas
 
 # Set environment variables
 ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=password
+# Password must be supplied at runtime via -e POSTGRES_PASSWORD or secrets management
 ENV POSTGRES_DB=testdb
 ENV PGDATA=/var/lib/postgresql/data
 
