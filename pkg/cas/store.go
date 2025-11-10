@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	BucketCAS      = "cas"
-	BucketCASRefs  = "cas_refs"
+	BucketCAS     = "cas"
+	BucketCASRefs = "cas_refs"
 )
 
 // CASStore implements content-addressable storage
@@ -328,10 +328,10 @@ func (c *CASStore) GarbageCollect() (int, error) {
 
 // Stats returns statistics about the CAS store
 type CASStats struct {
-	TotalObjects   int
-	TotalSize      int64
-	TotalRefs      int
-	UniqueFiles    int
+	TotalObjects     int
+	TotalSize        int64
+	TotalRefs        int
+	UniqueFiles      int
 	UnreferencedObjs int
 }
 
@@ -348,7 +348,7 @@ func (c *CASStore) GetStats() (CASStats, error) {
 		fileSet := make(map[string]bool)
 
 		// Count total references and unique files
-		refsBucket.ForEach(func(k, v []byte) error {
+		if err := refsBucket.ForEach(func(k, v []byte) error {
 			cid := string(k)
 			var refCount CASRefCount
 			if err := json.Unmarshal(v, &refCount); err != nil {
@@ -364,12 +364,14 @@ func (c *CASStore) GetStats() (CASStats, error) {
 			}
 
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
 
 		stats.UniqueFiles = len(fileSet)
 
 		// Count total objects and unreferenced objects
-		casBucket.ForEach(func(k, v []byte) error {
+		if err := casBucket.ForEach(func(k, v []byte) error {
 			stats.TotalObjects++
 			stats.TotalSize += int64(len(v))
 
@@ -379,7 +381,9 @@ func (c *CASStore) GetStats() (CASStats, error) {
 			}
 
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
 
 		return nil
 	})

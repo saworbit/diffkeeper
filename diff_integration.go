@@ -17,16 +17,18 @@ import (
 
 // getSchemaVersion returns the current schema version
 func (dk *DiffKeeper) getSchemaVersion() int {
-	var version int = SchemaVersionMVP // Default to MVP
+	version := SchemaVersionMVP
 
-	dk.db.View(func(tx *bbolt.Tx) error {
+	if err := dk.db.View(func(tx *bbolt.Tx) error {
 		meta := tx.Bucket([]byte(BucketMetadata))
 		v := meta.Get([]byte(SchemaVersionKey))
-		if v != nil && len(v) > 0 {
+		if len(v) > 0 {
 			version = int(v[0])
 		}
 		return nil
-	})
+	}); err != nil {
+		log.Printf("[Migration] failed to read schema version: %v", err)
+	}
 
 	return version
 }
@@ -292,13 +294,15 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 
 	// Check if changed
 	var prevHash string
-	dk.db.View(func(tx *bbolt.Tx) error {
+	if err := dk.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BucketHashes))
 		if v := b.Get([]byte(relPath)); v != nil {
 			prevHash = string(v)
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to read previous hash: %w", err)
+	}
 
 	if prevHash == newHash {
 		return nil // No change
@@ -323,7 +327,9 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 				if err != nil {
 					return fmt.Errorf("failed to store chunk: %w", err)
 				}
-				dk.cas.AddReference(cid, relPath)
+				if err := dk.cas.AddReference(cid, relPath); err != nil {
+					return fmt.Errorf("failed to add chunk reference: %w", err)
+				}
 				cids = append(cids, cid)
 				totalCompressedSize += int64(len(chunkData))
 			}
@@ -333,7 +339,9 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 			if err != nil {
 				return fmt.Errorf("failed to store snapshot: %w", err)
 			}
-			dk.cas.AddReference(cid, relPath)
+			if err := dk.cas.AddReference(cid, relPath); err != nil {
+				return fmt.Errorf("failed to add snapshot reference: %w", err)
+			}
 			cids = append(cids, cid)
 			totalCompressedSize = int64(len(data))
 		}
@@ -356,7 +364,6 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 			// Ensure same number of chunks (if file grew/shrunk, treat as snapshot)
 			if len(chunks) != len(prevChunks) {
 				logDebug("[BlueShiftDiff] Chunk count changed, creating snapshot")
-				isSnapshot = true
 				return dk.BlueShiftDiff(path)
 			}
 
@@ -370,7 +377,9 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 				if err != nil {
 					return fmt.Errorf("failed to store diff chunk: %w", err)
 				}
-				dk.cas.AddReference(cid, relPath)
+				if err := dk.cas.AddReference(cid, relPath); err != nil {
+					return fmt.Errorf("failed to add diff chunk reference: %w", err)
+				}
 				cids = append(cids, cid)
 				totalCompressedSize += int64(len(diffData))
 			}
@@ -385,7 +394,9 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 			if err != nil {
 				return fmt.Errorf("failed to store diff: %w", err)
 			}
-			dk.cas.AddReference(cid, relPath)
+			if err := dk.cas.AddReference(cid, relPath); err != nil {
+				return fmt.Errorf("failed to add diff reference: %w", err)
+			}
 			cids = append(cids, cid)
 			totalCompressedSize = int64(len(diffData))
 		}

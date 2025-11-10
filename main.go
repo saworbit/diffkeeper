@@ -338,6 +338,7 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 		}
 		monitor = "fsnotify"
 	}
+	log.Printf("[Monitor] configured backend: %s", monitor)
 
 	// Initialize CAS store
 	casStore, err := cas.NewCASStore(db, cfg.HashAlgo)
