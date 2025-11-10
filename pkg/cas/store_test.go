@@ -27,6 +27,22 @@ func setupTestDB(t *testing.T) (*bbolt.DB, func()) {
 	return db, cleanup
 }
 
+func mustAddReference(tb testing.TB, store *CASStore, cid, path string) {
+	tb.Helper()
+	if err := store.AddReference(cid, path); err != nil {
+		tb.Fatalf("AddReference(%s, %s) error: %v", cid, path, err)
+	}
+}
+
+func mustPut(tb testing.TB, store *CASStore, data []byte) string {
+	tb.Helper()
+	cid, err := store.Put(data)
+	if err != nil {
+		tb.Fatalf("store.Put error: %v", err)
+	}
+	return cid
+}
+
 func TestNewCASStore(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
@@ -239,12 +255,12 @@ func TestCASStore_GarbageCollect(t *testing.T) {
 
 	// Add some data with references
 	data1 := []byte("referenced data")
-	cid1, _ := store.Put(data1)
-	store.AddReference(cid1, "/file1")
+	cid1 := mustPut(t, store, data1)
+	mustAddReference(t, store, cid1, "/file1")
 
 	// Add some data without references
 	data2 := []byte("unreferenced data")
-	cid2, _ := store.Put(data2)
+	cid2 := mustPut(t, store, data2)
 
 	// Run GC
 	deleted, err := store.GarbageCollect()
@@ -257,13 +273,19 @@ func TestCASStore_GarbageCollect(t *testing.T) {
 	}
 
 	// Verify referenced data still exists
-	exists, _ := store.Has(cid1)
+	exists, err := store.Has(cid1)
+	if err != nil {
+		t.Fatalf("Has(%s) error: %v", cid1, err)
+	}
 	if !exists {
 		t.Error("GarbageCollect() deleted referenced data")
 	}
 
 	// Verify unreferenced data is gone
-	exists, _ = store.Has(cid2)
+	exists, err = store.Has(cid2)
+	if err != nil {
+		t.Fatalf("Has(%s) error: %v", cid2, err)
+	}
 	if exists {
 		t.Error("GarbageCollect() did not delete unreferenced data")
 	}
@@ -280,16 +302,16 @@ func TestCASStore_GetStats(t *testing.T) {
 
 	// Add data
 	data1 := []byte("data 1")
-	cid1, _ := store.Put(data1)
-	store.AddReference(cid1, "/file1")
-	store.AddReference(cid1, "/file2")
+	cid1 := mustPut(t, store, data1)
+	mustAddReference(t, store, cid1, "/file1")
+	mustAddReference(t, store, cid1, "/file2")
 
 	data2 := []byte("data 2")
-	cid2, _ := store.Put(data2)
-	store.AddReference(cid2, "/file1")
+	cid2 := mustPut(t, store, data2)
+	mustAddReference(t, store, cid2, "/file1")
 
 	data3 := []byte("data 3")
-	store.Put(data3) // No references
+	mustPut(t, store, data3) // No references
 
 	// Get stats
 	stats, err := store.GetStats()
@@ -318,12 +340,17 @@ func BenchmarkCASStore_Put(b *testing.B) {
 	db, cleanup := setupTestDB(&testing.T{})
 	defer cleanup()
 
-	store, _ := NewCASStore(db, "sha256")
+	store, err := NewCASStore(db, "sha256")
+	if err != nil {
+		b.Fatalf("NewCASStore() error = %v", err)
+	}
 	data := []byte("benchmark data")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.Put(data)
+		if _, err := store.Put(data); err != nil {
+			b.Fatalf("store.Put error: %v", err)
+		}
 	}
 }
 
@@ -331,12 +358,17 @@ func BenchmarkCASStore_Get(b *testing.B) {
 	db, cleanup := setupTestDB(&testing.T{})
 	defer cleanup()
 
-	store, _ := NewCASStore(db, "sha256")
+	store, err := NewCASStore(db, "sha256")
+	if err != nil {
+		b.Fatalf("NewCASStore() error = %v", err)
+	}
 	data := []byte("benchmark data")
-	cid, _ := store.Put(data)
+	cid := mustPut(b, store, data)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.Get(cid)
+		if _, err := store.Get(cid); err != nil {
+			b.Fatalf("store.Get error: %v", err)
+		}
 	}
 }

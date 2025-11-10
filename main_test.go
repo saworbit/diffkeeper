@@ -29,6 +29,13 @@ func newTestDiffKeeperWithDiffs(stateDir, storePath string) (*DiffKeeper, error)
 	return NewDiffKeeper(stateDir, storePath, cfg)
 }
 
+func viewDB(tb testing.TB, db *bbolt.DB, fn func(*bbolt.Tx) error) {
+	tb.Helper()
+	if err := db.View(fn); err != nil {
+		tb.Fatalf("db.View failed: %v", err)
+	}
+}
+
 func TestCompressDecompress(t *testing.T) {
 	testData := []byte("Hello, DiffKeeper! This is test data that should compress well.")
 
@@ -214,7 +221,7 @@ func TestNoChangeNoDelta(t *testing.T) {
 
 	// Verify only one delta was stored
 	count := 0
-	dk.db.View(func(tx *bbolt.Tx) error {
+	viewDB(t, dk.db, func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BucketDeltas))
 		c := b.Cursor()
 		for k, _ := c.First(); k != nil; k, _ = c.Next() {
@@ -329,7 +336,7 @@ func TestLargeFiles(t *testing.T) {
 
 	// Verify compression ratio
 	var compressedSize int
-	dk.db.View(func(tx *bbolt.Tx) error {
+	viewDB(t, dk.db, func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BucketDeltas))
 		relPath, _ := filepath.Rel(stateDir, testFile)
 		data := b.Get([]byte(relPath))
@@ -407,7 +414,11 @@ func TestPermissionErrors(t *testing.T) {
 		if err := os.Chmod(unreadableFile, 0000); err != nil {
 			t.Fatalf("Failed to chmod file: %v", err)
 		}
-		defer os.Chmod(unreadableFile, 0644) // Restore for cleanup
+		defer func() {
+			if err := os.Chmod(unreadableFile, 0644); err != nil {
+				t.Logf("warning: failed to restore permissions for %s: %v", unreadableFile, err)
+			}
+		}()
 
 		err = dk.BlueShift(unreadableFile)
 		if err == nil {
@@ -724,7 +735,11 @@ func TestWatchLoopWithSubdirectories(t *testing.T) {
 	defer dk.Close()
 
 	// Start watch loop
-	go dk.WatchLoop()
+	go func() {
+		if err := dk.WatchLoop(); err != nil {
+			t.Logf("WatchLoop exited with error: %v", err)
+		}
+	}()
 
 	// Give watcher time to initialize
 	// In production code, you'd use a proper sync mechanism
@@ -871,7 +886,11 @@ func TestReadOnlyScenarios(t *testing.T) {
 		if err := os.Chmod(storePath, 0444); err != nil {
 			t.Fatalf("Failed to make store read-only: %v", err)
 		}
-		defer os.Chmod(storePath, 0644) // Restore for cleanup
+		defer func() {
+			if err := os.Chmod(storePath, 0644); err != nil {
+				t.Logf("warning: failed to restore permissions for %s: %v", storePath, err)
+			}
+		}()
 
 		// Try to open DiffKeeper with read-only database
 		dk2, err := newTestDiffKeeper(stateDir, storePath)
@@ -941,7 +960,9 @@ func BenchmarkRedShift(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		os.RemoveAll(stateDir)
 		os.MkdirAll(stateDir, 0755)
-		dk.RedShift()
+		if err := dk.RedShift(); err != nil {
+			b.Fatalf("RedShift failed: %v", err)
+		}
 	}
 }
 

@@ -9,13 +9,41 @@ import (
 	"github.com/yourorg/diffkeeper/pkg/config"
 )
 
+func mustMkdirAll(tb testing.TB, path string) {
+	tb.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		tb.Fatalf("os.MkdirAll(%s) failed: %v", path, err)
+	}
+}
+
+func mustWriteFile(tb testing.TB, path string, data []byte) {
+	tb.Helper()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		tb.Fatalf("os.WriteFile(%s) failed: %v", path, err)
+	}
+}
+
+func mustBlueShift(tb testing.TB, dk *DiffKeeper, path string) {
+	tb.Helper()
+	if err := dk.BlueShift(path); err != nil {
+		tb.Fatalf("BlueShift(%s) failed: %v", path, err)
+	}
+}
+
+func mustRemoveAll(tb testing.TB, path string) {
+	tb.Helper()
+	if err := os.RemoveAll(path); err != nil {
+		tb.Fatalf("RemoveAll(%s) failed: %v", path, err)
+	}
+}
+
 // BenchmarkStorageMVP benchmarks storage usage with MVP (full file compression)
 func BenchmarkStorageMVP(b *testing.B) {
 	tmpDir := b.TempDir()
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "mvp-bench.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	dk, err := newTestDiffKeeper(stateDir, storePath)
 	if err != nil {
@@ -44,13 +72,8 @@ func BenchmarkStorageMVP(b *testing.B) {
 			data[j] = byte(data[j] + 1)
 		}
 
-		if err := os.WriteFile(testFile, data, 0644); err != nil {
-			b.Fatal(err)
-		}
-
-		if err := dk.BlueShift(testFile); err != nil {
-			b.Fatal(err)
-		}
+		mustWriteFile(b, testFile, data)
+		mustBlueShift(b, dk, testFile)
 	}
 
 	b.StopTimer()
@@ -66,7 +89,7 @@ func BenchmarkStorageBinaryDiffs(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "diff-bench.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
 	if err != nil {
@@ -95,13 +118,8 @@ func BenchmarkStorageBinaryDiffs(b *testing.B) {
 			data[j] = byte(data[j] + 1)
 		}
 
-		if err := os.WriteFile(testFile, data, 0644); err != nil {
-			b.Fatal(err)
-		}
-
-		if err := dk.BlueShift(testFile); err != nil {
-			b.Fatal(err)
-		}
+		mustWriteFile(b, testFile, data)
+		mustBlueShift(b, dk, testFile)
 	}
 
 	b.StopTimer()
@@ -117,7 +135,7 @@ func BenchmarkRecoveryMVP(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "mvp-recovery.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	// Setup: Create some test data
 	dk, err := newTestDiffKeeper(stateDir, storePath)
@@ -129,8 +147,8 @@ func BenchmarkRecoveryMVP(b *testing.B) {
 	for i := 0; i < 10; i++ {
 		testFile := filepath.Join(stateDir, "file_"+string(rune(i))+".txt")
 		content := bytes.Repeat([]byte("test data "), 1000)
-		os.WriteFile(testFile, content, 0644)
-		dk.BlueShift(testFile)
+		mustWriteFile(b, testFile, content)
+		mustBlueShift(b, dk, testFile)
 	}
 
 	dk.Close()
@@ -141,8 +159,8 @@ func BenchmarkRecoveryMVP(b *testing.B) {
 		b.StopTimer()
 
 		// Remove all files
-		os.RemoveAll(stateDir)
-		os.MkdirAll(stateDir, 0755)
+		mustRemoveAll(b, stateDir)
+		mustMkdirAll(b, stateDir)
 
 		// Reopen DiffKeeper
 		dk2, err := newTestDiffKeeper(stateDir, storePath)
@@ -168,7 +186,7 @@ func BenchmarkRecoveryBinaryDiffs(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "diff-recovery.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	// Setup: Create some test data
 	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
@@ -180,8 +198,8 @@ func BenchmarkRecoveryBinaryDiffs(b *testing.B) {
 	for i := 0; i < 10; i++ {
 		testFile := filepath.Join(stateDir, "file_"+string(rune(i))+".txt")
 		content := bytes.Repeat([]byte("test data "), 1000)
-		os.WriteFile(testFile, content, 0644)
-		dk.BlueShift(testFile)
+		mustWriteFile(b, testFile, content)
+		mustBlueShift(b, dk, testFile)
 	}
 
 	dk.Close()
@@ -192,8 +210,8 @@ func BenchmarkRecoveryBinaryDiffs(b *testing.B) {
 		b.StopTimer()
 
 		// Remove all files
-		os.RemoveAll(stateDir)
-		os.MkdirAll(stateDir, 0755)
+		mustRemoveAll(b, stateDir)
+		mustMkdirAll(b, stateDir)
 
 		// Reopen DiffKeeper
 		dk2, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
@@ -219,7 +237,7 @@ func BenchmarkDiffComputation(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "diff-compute.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
 	if err != nil {
@@ -234,8 +252,8 @@ func BenchmarkDiffComputation(b *testing.B) {
 	for i := range data {
 		data[i] = byte(i)
 	}
-	os.WriteFile(testFile, data, 0644)
-	dk.BlueShift(testFile)
+	mustWriteFile(b, testFile, data)
+	mustBlueShift(b, dk, testFile)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -246,10 +264,8 @@ func BenchmarkDiffComputation(b *testing.B) {
 			data[j] = byte(data[j] + 1)
 		}
 
-		os.WriteFile(testFile, data, 0644)
-		if err := dk.BlueShift(testFile); err != nil {
-			b.Fatal(err)
-		}
+		mustWriteFile(b, testFile, data)
+		mustBlueShift(b, dk, testFile)
 	}
 }
 
@@ -259,7 +275,7 @@ func BenchmarkChunking(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "chunk-bench.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	// Configure for chunking
 	cfg := config.DefaultConfig()
@@ -290,10 +306,8 @@ func BenchmarkChunking(b *testing.B) {
 			data[j] = byte(data[j] + 1)
 		}
 
-		os.WriteFile(testFile, data, 0644)
-		if err := dk.BlueShift(testFile); err != nil {
-			b.Fatal(err)
-		}
+		mustWriteFile(b, testFile, data)
+		mustBlueShift(b, dk, testFile)
 	}
 }
 
@@ -303,7 +317,7 @@ func BenchmarkMerkleVerification(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "merkle-bench.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
 	if err != nil {
@@ -313,8 +327,8 @@ func BenchmarkMerkleVerification(b *testing.B) {
 
 	testFile := filepath.Join(stateDir, "merkle.txt")
 	content := bytes.Repeat([]byte("test data "), 1000)
-	os.WriteFile(testFile, content, 0644)
-	dk.BlueShift(testFile)
+	mustWriteFile(b, testFile, content)
+	mustBlueShift(b, dk, testFile)
 
 	meta, err := dk.getMetadata("merkle.txt")
 	if err != nil {
@@ -338,7 +352,7 @@ func BenchmarkCASLookup(b *testing.B) {
 	stateDir := filepath.Join(tmpDir, "state")
 	storePath := filepath.Join(tmpDir, "cas-bench.bolt")
 
-	os.MkdirAll(stateDir, 0755)
+	mustMkdirAll(b, stateDir)
 
 	dk, err := newTestDiffKeeperWithDiffs(stateDir, storePath)
 	if err != nil {

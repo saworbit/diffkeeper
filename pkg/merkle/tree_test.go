@@ -220,7 +220,9 @@ func TestGetCachedTree(t *testing.T) {
 	key := "test-file.txt"
 
 	// Cache a tree
-	mm.BuildAndCache(key, cids)
+	if _, err := mm.BuildAndCache(key, cids); err != nil {
+		t.Fatalf("BuildAndCache() error = %v", err)
+	}
 
 	// Retrieve cached tree
 	tree, ok := mm.GetCachedTree(key)
@@ -243,8 +245,12 @@ func TestClearCache(t *testing.T) {
 	mm := NewMerkleManager()
 
 	// Cache some trees
-	mm.BuildAndCache("file1", []string{"cid1", "cid2"})
-	mm.BuildAndCache("file2", []string{"cid3", "cid4"})
+	if _, err := mm.BuildAndCache("file1", []string{"cid1", "cid2"}); err != nil {
+		t.Fatalf("BuildAndCache() error = %v", err)
+	}
+	if _, err := mm.BuildAndCache("file2", []string{"cid3", "cid4"}); err != nil {
+		t.Fatalf("BuildAndCache() error = %v", err)
+	}
 
 	// Clear cache
 	mm.ClearCache()
@@ -264,8 +270,12 @@ func TestClearCache(t *testing.T) {
 func TestRemoveFromCache(t *testing.T) {
 	mm := NewMerkleManager()
 
-	mm.BuildAndCache("file1", []string{"cid1", "cid2"})
-	mm.BuildAndCache("file2", []string{"cid3", "cid4"})
+	if _, err := mm.BuildAndCache("file1", []string{"cid1", "cid2"}); err != nil {
+		t.Fatalf("BuildAndCache() error = %v", err)
+	}
+	if _, err := mm.BuildAndCache("file2", []string{"cid3", "cid4"}); err != nil {
+		t.Fatalf("BuildAndCache() error = %v", err)
+	}
 
 	// Remove one tree
 	mm.RemoveFromCache("file1")
@@ -355,7 +365,9 @@ func BenchmarkBuildTree_SmallTree(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		mm.BuildTree(cids)
+		if _, err := mm.BuildTree(cids); err != nil {
+			b.Fatalf("BuildTree() error = %v", err)
+		}
 	}
 }
 
@@ -370,18 +382,25 @@ func BenchmarkBuildTree_LargeTree(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		mm.BuildTree(cids)
+		if _, err := mm.BuildTree(cids); err != nil {
+			b.Fatalf("BuildTree() error = %v", err)
+		}
 	}
 }
 
 func BenchmarkVerifyFileIntegrity(b *testing.B) {
 	mm := NewMerkleManager()
 	cids := []string{"cid1", "cid2", "cid3", "cid4", "cid5"}
-	tree, _ := mm.BuildTree(cids)
+	tree, err := mm.BuildTree(cids)
+	if err != nil {
+		b.Fatalf("BuildTree() error = %v", err)
+	}
 	root := GetRoot(tree)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		mm.VerifyFileIntegrity(cids, root)
+		if err := mm.VerifyFileIntegrity(cids, root); err != nil {
+			b.Fatalf("VerifyFileIntegrity() error = %v", err)
+		}
 	}
 }

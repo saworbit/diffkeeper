@@ -12,6 +12,13 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+func viewTx(tb testing.TB, db *bbolt.DB, fn func(*bbolt.Tx) error) {
+	tb.Helper()
+	if err := db.View(fn); err != nil {
+		tb.Fatalf("db.View failed: %v", err)
+	}
+}
+
 // TestBinaryDiffsEndToEnd tests the complete binary diff workflow
 func TestBinaryDiffsEndToEnd(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -122,7 +129,7 @@ func TestMigrationMVPToDiff(t *testing.T) {
 
 	// Verify data was stored in MVP format (deltas bucket)
 	var mvpDataExists bool
-	dk1.db.View(func(tx *bbolt.Tx) error {
+	viewTx(t, dk1.db, func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BucketDeltas))
 		v := b.Get([]byte("migrate-test.txt"))
 		mvpDataExists = v != nil
@@ -294,7 +301,7 @@ func TestLargeFileChunking(t *testing.T) {
 	// Create DiffKeeper with smaller chunk threshold for testing
 	cfg := config.DefaultConfig()
 	cfg.EnableDiff = true
-	cfg.ChunkSizeMB = 1 // 1MB chunks
+	cfg.ChunkSizeMB = 1                       // 1MB chunks
 	cfg.ChunkThresholdBytes = 5 * 1024 * 1024 // 5MB threshold
 
 	dk, err := NewDiffKeeper(stateDir, storePath, cfg)
