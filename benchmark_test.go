@@ -9,34 +9,6 @@ import (
 	"github.com/yourorg/diffkeeper/pkg/config"
 )
 
-func mustMkdirAll(tb testing.TB, path string) {
-	tb.Helper()
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		tb.Fatalf("os.MkdirAll(%s) failed: %v", path, err)
-	}
-}
-
-func mustWriteFile(tb testing.TB, path string, data []byte) {
-	tb.Helper()
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		tb.Fatalf("os.WriteFile(%s) failed: %v", path, err)
-	}
-}
-
-func mustBlueShift(tb testing.TB, dk *DiffKeeper, path string) {
-	tb.Helper()
-	if err := dk.BlueShift(path); err != nil {
-		tb.Fatalf("BlueShift(%s) failed: %v", path, err)
-	}
-}
-
-func mustRemoveAll(tb testing.TB, path string) {
-	tb.Helper()
-	if err := os.RemoveAll(path); err != nil {
-		tb.Fatalf("RemoveAll(%s) failed: %v", path, err)
-	}
-}
-
 // BenchmarkStorageMVP benchmarks storage usage with MVP (full file compression)
 func BenchmarkStorageMVP(b *testing.B) {
 	tmpDir := b.TempDir()
