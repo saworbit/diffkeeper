@@ -27,7 +27,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build & push image
         if: github.ref == 'refs/heads/main' && matrix.platform == 'amd64'
@@ -35,5 +35,5 @@ jobs:
           docker buildx build \
             --builder ${{ steps.buildx.outputs.name }} \
             --platform linux/${{ matrix.platform }} \
-            -t ghcr.io/saworbit/diffkeeper:ci \
+            -t ghcr.io/${{ github.repository_owner }}/diffkeeper:ci \
             --push .
