@@ -25,7 +25,10 @@ jobs:
 
   publish-image:
     needs: build-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'saworbit' && github.actor == github.repository_owner
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'saworbit'
+    concurrency:
+      group: publish-image
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,12 +38,19 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build & push image
+          username: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_PAT != '' && secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
+      - name: Build & push image (tagged)
         run: |
           docker buildx build \
             --builder ${{ steps.buildx.outputs.name }} \
             --platform linux/amd64 \
             -t ghcr.io/${{ github.repository_owner }}/diffkeeper:ci \
+            --push .
+      - name: Build & push image (sha)
+        run: |
+          docker buildx build \
+            --builder ${{ steps.buildx.outputs.name }} \
+            --platform linux/amd64 \
+            -t ghcr.io/${{ github.repository_owner }}/diffkeeper:ci-${{ github.sha }} \
             --push .
