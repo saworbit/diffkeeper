@@ -290,6 +290,20 @@ func (dk *DiffKeeper) shouldCapturePath(path string) bool {
 	return true
 }
 
+// NewDiffKeeper initializes a DiffKeeper instance with the specified state directory,
+// BoltDB store path, and configuration. It performs the following initialization steps:
+//   1. Opens the BoltDB database at storePath with a 1-second timeout
+//   2. Creates required buckets (deltas, hashes, metadata, snapshots) if they don't exist
+//   3. Performs an explicit writability test to ensure the database accepts writes
+//   4. Initializes the monitoring backend (eBPF or fsnotify) based on configuration
+//   5. Initializes the CAS store and diff engine if binary diffs are enabled
+//
+// Returns an error if:
+//   - The database cannot be opened
+//   - The database is read-only (e.g., file permissions are 0444)
+//   - Required buckets cannot be created
+//   - eBPF initialization fails (when fallback is disabled)
+//   - CAS or diff engine initialization fails
 func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKeeper, error) {
 	db, err := bbolt.Open(storePath, 0600, &bbolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
@@ -304,6 +318,26 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 			}
 		}
 		return nil
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	// Verify database is writable by performing a test write
+	// This detects read-only databases that might have opened successfully
+	// but would fail on actual write operations (e.g., chmod 0444)
+	err = db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(BucketMetadata))
+		if b == nil {
+			return fmt.Errorf("metadata bucket not found")
+		}
+		// Write and immediately delete a test key
+		testKey := []byte("__writability_test__")
+		if err := b.Put(testKey, []byte("1")); err != nil {
+			return fmt.Errorf("database is read-only: %w", err)
+		}
+		return b.Delete(testKey)
 	})
 	if err != nil {
 		db.Close()

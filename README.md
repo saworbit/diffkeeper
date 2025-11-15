@@ -216,6 +216,7 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - Added a regression test to confirm nested directories are monitored on every OS.
 - `--debug` verbose logging documents watcher setup in the logs so you can troubleshoot missing events quickly.
 - BlueShift now validates file permissions up front and surfaces an error when a watched file loses read access, preventing silent captures of unreadable data.
+- NewDiffKeeper now performs an explicit writability test during initialization, failing fast with a clear error message when the BoltDB store is read-only (e.g., chmod 0444). This prevents operators from being misled into thinking deltas are being persisted when the database cannot accept writes.
 
 ### 4. Kubernetes Deployment
 
