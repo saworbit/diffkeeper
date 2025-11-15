@@ -278,6 +278,15 @@ func (dk *DiffKeeper) shouldSnapshot(relPath string) bool {
 
 // BlueShiftDiff captures file changes using binary diffs
 func (dk *DiffKeeper) BlueShiftDiff(path string) error {
+	// Check if shutdown is in progress before accessing database
+	if dk.monitorCtx != nil {
+		select {
+		case <-dk.monitorCtx.Done():
+			return nil // Shutdown in progress, skip capture
+		default:
+		}
+	}
+
 	relPath, err := filepath.Rel(dk.stateDir, path)
 	if err != nil {
 		return err

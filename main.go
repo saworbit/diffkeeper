@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -54,6 +55,7 @@ type DiffKeeper struct {
 	watcher    *fsnotify.Watcher
 	monitorCtx context.Context
 	cancelMon  context.CancelFunc
+	wg         sync.WaitGroup // Tracks active monitoring goroutines
 	ebpfMgr    ebpf.Manager
 	profiler   *ebpf.Profiler
 	config     *config.DiffConfig
@@ -151,7 +153,9 @@ func (dk *DiffKeeper) ensureWatcher() error {
 }
 
 func (dk *DiffKeeper) startWatcherLoop() {
+	dk.wg.Add(1)
 	go func() {
+		defer dk.wg.Done()
 		if err := dk.WatchLoop(); err != nil {
 			log.Printf("[Watcher] Loop exited: %v", err)
 		}
@@ -177,14 +181,26 @@ func (dk *DiffKeeper) startEBPFWorkers() {
 	if dk.config != nil {
 		dk.profiler = ebpf.NewProfiler(&dk.config.EBPF, dk.ebpfMgr)
 		if dk.profiler != nil {
-			go dk.profiler.Run(dk.monitorCtx)
+			dk.wg.Add(1)
+			go func() {
+				defer dk.wg.Done()
+				dk.profiler.Run(dk.monitorCtx)
+			}()
 		}
 	}
 
-	go dk.consumeEBPFEvents(events)
+	dk.wg.Add(1)
+	go func() {
+		defer dk.wg.Done()
+		dk.consumeEBPFEvents(events)
+	}()
 
 	if dk.config != nil && dk.config.EBPF.AutoInject {
-		go dk.handleLifecycleEvents()
+		dk.wg.Add(1)
+		go func() {
+			defer dk.wg.Done()
+			dk.handleLifecycleEvents()
+		}()
 	}
 
 	log.Printf("[Monitor] eBPF syscall interception active (state dir: %s)", dk.stateDir)
@@ -422,9 +438,16 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 }
 
 func (dk *DiffKeeper) Close() error {
+	// Step 1: Cancel context to signal all goroutines to stop
 	if dk.cancelMon != nil {
 		dk.cancelMon()
 	}
+
+	// Step 2: Wait for all monitoring goroutines to exit
+	// This ensures no goroutine will try to access the database after we close it
+	dk.wg.Wait()
+
+	// Step 3: Close resources (safe because all goroutines have exited)
 	if dk.watcher != nil {
 		dk.watcher.Close()
 	}
@@ -509,6 +532,15 @@ func (dk *DiffKeeper) BlueShift(path string) error {
 
 // blueShiftMVP: Legacy MVP implementation (full file compression)
 func (dk *DiffKeeper) blueShiftMVP(path string) error {
+	// Check if shutdown is in progress before accessing database
+	if dk.monitorCtx != nil {
+		select {
+		case <-dk.monitorCtx.Done():
+			return nil // Shutdown in progress, skip capture
+		default:
+		}
+	}
+
 	relPath, err := filepath.Rel(dk.stateDir, path)
 	if err != nil {
 		return err
@@ -583,10 +615,11 @@ func (dk *DiffKeeper) WatchLoop() error {
 		return err
 	}
 
-	var done <-chan struct{}
-	if dk.monitorCtx != nil {
-		done = dk.monitorCtx.Done()
+	// Ensure we have a monitor context for coordinated shutdown
+	if dk.monitorCtx == nil {
+		dk.monitorCtx, dk.cancelMon = context.WithCancel(context.Background())
 	}
+	done := dk.monitorCtx.Done()
 
 	for {
 		select {
@@ -597,6 +630,13 @@ func (dk *DiffKeeper) WatchLoop() error {
 				return nil
 			}
 
+			// Check if shutdown was requested while event was queued
+			select {
+			case <-done:
+				return nil
+			default:
+			}
+
 			logDebug("[Watcher] Event %s for %s", event.Op, event.Name)
 
 			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
@@ -605,6 +645,13 @@ func (dk *DiffKeeper) WatchLoop() error {
 
 			// Small delay to avoid capturing partial writes
 			time.Sleep(100 * time.Millisecond)
+
+			// Check again after sleep in case shutdown was requested
+			select {
+			case <-done:
+				return nil
+			default:
+			}
 
 			info, err := os.Stat(event.Name)
 			if err != nil {
