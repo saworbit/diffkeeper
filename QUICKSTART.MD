@@ -153,6 +153,7 @@ docker logs <container-name>
 ```
 
 Common issue: Insufficient permissions. Ensure the data directory is writable.
+DiffKeeper also refuses to capture files it cannot read; if you `chmod 000` (or otherwise lock down ACLs) you'll see `[BlueShift] permission denied` errors until read access is restored.
 
 ### "Failed to open store" error
 

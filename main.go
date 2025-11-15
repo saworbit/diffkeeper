@@ -480,6 +480,15 @@ func (dk *DiffKeeper) blueShiftMVP(path string) error {
 		return err
 	}
 
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
+	if err := ensureReadable(path, info); err != nil {
+		return err
+	}
+
 	// Read current file
 	data, err := os.ReadFile(path)
 	if err != nil {

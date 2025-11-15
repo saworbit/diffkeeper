@@ -215,6 +215,7 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - Recursive directory watching is now enabled cross-platform, ensuring nested writes are captured the moment new folders appear.
 - Added a regression test to confirm nested directories are monitored on every OS.
 - `--debug` verbose logging documents watcher setup in the logs so you can troubleshoot missing events quickly.
+- BlueShift now validates file permissions up front and surfaces an error when a watched file loses read access, preventing silent captures of unreadable data.
 
 ### 4. Kubernetes Deployment
 
