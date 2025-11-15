@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"github.com/saworbit/diffkeeper/pkg/merkle"
 	"go.etcd.io/bbolt"
 )
+
+var errForceSnapshot = errors.New("force snapshot fallback")
 
 // getSchemaVersion returns the current schema version
 func (dk *DiffKeeper) getSchemaVersion() int {
@@ -311,95 +314,128 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 	// Determine if we should create a snapshot or diff
 	isSnapshot := dk.shouldSnapshot(relPath)
 	isChunked := dk.config.ShouldChunk(fileSize)
+	forceSnapshot := prevHash == ""
 
-	var cids []string
-	var totalCompressedSize int64
+	var prevData []byte
+	if !isSnapshot && !forceSnapshot {
+		var prevErr error
+		prevData, prevErr = dk.getPreviousVersion(relPath)
+		if prevErr != nil || prevData == nil {
+			logDebug("[BlueShiftDiff] Cannot get previous version for %s, creating snapshot", relPath)
+			forceSnapshot = true
+		}
+	}
 
-	if isSnapshot || prevHash == "" {
-		// Create full snapshot
+	var (
+		cids                []string
+		totalCompressedSize int64
+	)
+
+	storeSnapshot := func() ([]string, int64, error) {
 		logDebug("[BlueShiftDiff] Creating snapshot for %s (%.2f MB)", relPath, float64(fileSize)/1024/1024)
+		var snapshotCIDs []string
+		var compressedSize int64
 
 		if isChunked {
-			// Split into chunks and store
 			chunks := chunk.SplitFile(data, dk.config.GetChunkSizeBytes())
 			for _, chunkData := range chunks {
 				cid, err := dk.cas.Put(chunkData)
 				if err != nil {
-					return fmt.Errorf("failed to store chunk: %w", err)
+					return nil, 0, fmt.Errorf("failed to store chunk: %w", err)
 				}
 				if err := dk.cas.AddReference(cid, relPath); err != nil {
-					return fmt.Errorf("failed to add chunk reference: %w", err)
+					return nil, 0, fmt.Errorf("failed to add chunk reference: %w", err)
 				}
-				cids = append(cids, cid)
-				totalCompressedSize += int64(len(chunkData))
+				snapshotCIDs = append(snapshotCIDs, cid)
+				compressedSize += int64(len(chunkData))
 			}
 		} else {
-			// Store as single snapshot
 			cid, err := dk.cas.Put(data)
 			if err != nil {
-				return fmt.Errorf("failed to store snapshot: %w", err)
+				return nil, 0, fmt.Errorf("failed to store snapshot: %w", err)
 			}
 			if err := dk.cas.AddReference(cid, relPath); err != nil {
-				return fmt.Errorf("failed to add snapshot reference: %w", err)
+				return nil, 0, fmt.Errorf("failed to add snapshot reference: %w", err)
 			}
-			cids = append(cids, cid)
-			totalCompressedSize = int64(len(data))
-		}
-	} else {
-		// Create binary diff
-		prevData, err := dk.getPreviousVersion(relPath)
-		if err != nil || prevData == nil {
-			// Fallback to snapshot if we can't get previous version
-			logDebug("[BlueShiftDiff] Cannot get previous version for %s, creating snapshot", relPath)
-			return dk.BlueShiftDiff(path) // Recursive call will create snapshot
+			snapshotCIDs = append(snapshotCIDs, cid)
+			compressedSize = int64(len(data))
 		}
 
+		return snapshotCIDs, compressedSize, nil
+	}
+
+	storeDiff := func(previous []byte) ([]string, int64, error) {
 		logDebug("[BlueShiftDiff] Creating diff for %s (%.2f MB)", relPath, float64(fileSize)/1024/1024)
+		var diffCIDs []string
+		var compressedSize int64
 
 		if isChunked {
-			// Compute per-chunk diffs
 			chunks := chunk.SplitFile(data, dk.config.GetChunkSizeBytes())
-			prevChunks := chunk.SplitFile(prevData, dk.config.GetChunkSizeBytes())
+			prevChunks := chunk.SplitFile(previous, dk.config.GetChunkSizeBytes())
 
-			// Ensure same number of chunks (if file grew/shrunk, treat as snapshot)
 			if len(chunks) != len(prevChunks) {
 				logDebug("[BlueShiftDiff] Chunk count changed, creating snapshot")
-				return dk.BlueShiftDiff(path)
+				return nil, 0, errForceSnapshot
 			}
 
 			for i, chunkData := range chunks {
 				diffData, err := dk.diffEngine.ComputeDiff(prevChunks[i], chunkData)
 				if err != nil {
-					return fmt.Errorf("failed to compute diff for chunk %d: %w", i, err)
+					return nil, 0, fmt.Errorf("failed to compute diff for chunk %d: %w", i, err)
 				}
 
 				cid, err := dk.cas.Put(diffData)
 				if err != nil {
-					return fmt.Errorf("failed to store diff chunk: %w", err)
+					return nil, 0, fmt.Errorf("failed to store diff chunk: %w", err)
 				}
 				if err := dk.cas.AddReference(cid, relPath); err != nil {
-					return fmt.Errorf("failed to add diff chunk reference: %w", err)
+					return nil, 0, fmt.Errorf("failed to add diff chunk reference: %w", err)
 				}
-				cids = append(cids, cid)
-				totalCompressedSize += int64(len(diffData))
+				diffCIDs = append(diffCIDs, cid)
+				compressedSize += int64(len(diffData))
 			}
 		} else {
-			// Compute single diff
-			diffData, err := dk.diffEngine.ComputeDiff(prevData, data)
+			diffData, err := dk.diffEngine.ComputeDiff(previous, data)
 			if err != nil {
-				return fmt.Errorf("failed to compute diff: %w", err)
+				return nil, 0, fmt.Errorf("failed to compute diff: %w", err)
 			}
 
 			cid, err := dk.cas.Put(diffData)
 			if err != nil {
-				return fmt.Errorf("failed to store diff: %w", err)
+				return nil, 0, fmt.Errorf("failed to store diff: %w", err)
 			}
 			if err := dk.cas.AddReference(cid, relPath); err != nil {
-				return fmt.Errorf("failed to add diff reference: %w", err)
+				return nil, 0, fmt.Errorf("failed to add diff reference: %w", err)
 			}
-			cids = append(cids, cid)
-			totalCompressedSize = int64(len(diffData))
+			diffCIDs = append(diffCIDs, cid)
+			compressedSize = int64(len(diffData))
 		}
+
+		return diffCIDs, compressedSize, nil
+	}
+
+	if !isSnapshot && !forceSnapshot {
+		diffCIDs, compressedSize, diffErr := storeDiff(prevData)
+		if diffErr != nil {
+			if errors.Is(diffErr, errForceSnapshot) {
+				forceSnapshot = true
+			} else {
+				return diffErr
+			}
+		} else {
+			cids = diffCIDs
+			totalCompressedSize = compressedSize
+		}
+	}
+
+	if isSnapshot || forceSnapshot {
+		isSnapshot = true
+		snapshotCIDs, compressedSize, snapErr := storeSnapshot()
+		if snapErr != nil {
+			return snapErr
+		}
+		cids = snapshotCIDs
+		totalCompressedSize = compressedSize
 	}
 
 	// Get previous version count and base snapshot CID
