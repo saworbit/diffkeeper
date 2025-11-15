@@ -25,7 +25,7 @@ jobs:
 
   publish-image:
     needs: build-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'saworbit'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'saworbit' && github.actor == github.repository_owner
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
