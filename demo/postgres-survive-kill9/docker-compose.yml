@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  postgres:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+      - "9911:9911"
+    volumes:
+      - deltas:/deltas
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bench
+
+  loader:
+    image: crunchydata/pgbench:16
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    command: >
+      sh -c "
+        createdb bench || true;
+        pgbench -i bench || true;
+        while true; do
+          pgbench -c 4 -j 2 -t 1000 bench || true;
+          sleep 0.5;
+        done
+      "
+
+volumes:
+  deltas:
