@@ -84,6 +84,24 @@ Use this checklist to track your progress building the MVP.
 
 ---
 
+### Day 6: Observability (4 hours)  COMPLETE
+
+- [x] **Prometheus endpoint**
+  - [x] Serve `/metrics` on dedicated listener (`--metrics-addr`, default `:9911`)
+  - [x] Include Go/process collectors and namespaced `diffkeeper_` metrics
+  - [x] Add Kubernetes ServiceMonitor example to README
+- [x] **Core signals**
+  - [x] Capture latency + outcome histograms/counters
+  - [x] Recovery duration + outcome
+  - [x] Storage saved bytes/ratio, store size, files tracked, delta counts, liveness
+- [x] **Tests**
+  - [x] Unit test coverage for metric recording and `/metrics` handler
+  - [x] `go test ./...` passing
+
+**Success criteria:** Metrics are exposed by default, scrapeable, and validated by tests.
+
+---
+
 ### Day 4: Build Automation (4 hours)  COMPLETE
 
 - [x] **Makefile (2h)**

@@ -5,6 +5,8 @@
 **Status:** Preview (eBPF + streaming chunking)
 
 ### Highlights
+- Prometheus metrics endpoint (`:9911/metrics`) with namespaced `diffkeeper_` capture, recovery, storage, store-size, and liveness signals; Go/process collectors enabled by default.
+- New CLI/env: `--metrics-addr` / `DIFFKEEPER_METRICS_ADDR` to place the metrics server on a dedicated port.
 - Streaming chunked diffs for huge files: Rabin-Karp content-defined chunking (avg 8–64 MiB) streams >10GB files without OOM, compresses chunks with zstd, and replays via manifests.
 - Chunk-aware CAS: SHA256-addressed chunk helpers with refcounts and transparent compression on reads/writes.
 - New large-file metrics: `diffkeeper_chunk_total`, `diffkeeper_chunk_dedup_ratio`, `diffkeeper_chunk_capture_duration_ms`, `diffkeeper_large_file_tracked_total`.

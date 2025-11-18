@@ -60,8 +60,14 @@ make build-ebpf
 ./bin/diffkeeper \
   --state-dir=/path/to/watch \
   --store=/path/to/deltas.bolt \
+  --metrics-addr=:9911 \
   -- your-app --with-args
 ```
+
+### Step 2.5: Observe Metrics (Prometheus)
+- Metrics are exposed on `:9911/metrics` by default. Override with `--metrics-addr` or `DIFFKEEPER_METRICS_ADDR`.
+- Default metrics include Go/process stats plus `diffkeeper_` capture, recovery, storage savings, and store size gauges.
+- Scrape locally with `curl localhost:9911/metrics` or wire a ServiceMonitor in Kubernetes (see README Observability).
 
 ### Step 3: Docker Integration
 

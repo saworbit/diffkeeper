@@ -31,6 +31,8 @@ diffkeeper/
 |   |-- ebpf-guide.md
 |   |-- patents.md
 |   |-- supported-kernels.md
+|-- internal/
+|   |-- metrics/       # Prometheus registry, collectors, /metrics server
 |-- ebpf/
 |   |-- diffkeeper.bpf.c
 |-- bin/                # build output (gitignored)
@@ -47,6 +49,7 @@ diffkeeper/
 **main.go** (~500 lines)
 - `DiffKeeper` struct - orchestrates BoltDB, CAS, diff engine, and monitoring backends (eBPF-first with fsnotify fallback)
 - `StartMonitoring()` - loads eBPF manager, profiler, lifecycle tracer, or falls back to fsnotify
+- `startMetricsCollectors()` and `metrics.Serve()` - publish Prometheus metrics on `--metrics-addr` (default `:9911`)
 - `addWatchRecursive()` - attaches watchers to nested directories on every platform
 - `RedShift()` / `BlueShift()` - restore/capture with diff + CAS
 - Cobra CLI now includes eBPF/auto-injection flags plus process hand-off via `syscall.Exec`
@@ -66,6 +69,7 @@ require (
     github.com/cilium/ebpf v0.13.0
     github.com/ulikunitz/xz v0.5.15
     github.com/fsnotify/fsnotify v1.7.0
+    github.com/prometheus/client_golang v1.23.2
     github.com/spf13/cobra v1.8.1
     go.etcd.io/bbolt v1.3.10
 )
