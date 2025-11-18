@@ -339,10 +339,23 @@ func (dk *DiffKeeper) shouldSnapshot(relPath string) bool {
 func (dk *DiffKeeper) captureChunked(relPath, absPath string, fileSize int64, prevHash string) error {
 	start := time.Now()
 	cfg := dk.config.GetChunkingConfig()
+	chunkSizeBytes := dk.config.GetChunkSizeBytes()
+	avgSize := cfg.AvgBytes
+	if chunkSizeBytes > 0 {
+		avgSize = chunkSizeBytes
+	}
+	minSize := cfg.MinBytes
+	if minSize > avgSize {
+		minSize = avgSize
+	}
+	maxSize := cfg.MaxBytes
+	if maxSize < avgSize {
+		maxSize = avgSize
+	}
 	params := chunk.Params{
-		MinSize: cfg.MinBytes,
-		AvgSize: cfg.AvgBytes,
-		MaxSize: cfg.MaxBytes,
+		MinSize: minSize,
+		AvgSize: avgSize,
+		MaxSize: maxSize,
 		Window:  cfg.HashWindow,
 	}
 
