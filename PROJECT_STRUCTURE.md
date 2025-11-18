@@ -15,7 +15,15 @@ diffkeeper/
 |-- main_test.go
 |-- Dockerfile
 |-- Dockerfile.postgres
-|-- demo.sh
+|-- demo/                    # user-facing demos (start with postgres survive kill -9)
+|   |-- postgres-survive-kill9/
+|       |-- Dockerfile
+|       |-- docker-compose.yml
+|       |-- chaos.sh
+|       |-- chaos.bat
+|       |-- verify.sh
+|       |-- README.md
+|-- demo.sh                  # legacy demo script (superseded by demo/postgres-survive-kill9)
 |-- Makefile
 |-- k8s-statefulset.yaml
 |-- go.mod
@@ -92,9 +100,8 @@ require (
 - `make build-windows-amd64` / `make build-windows-arm64` - Native Windows binaries (CGO disabled)
 - `make release-windows` - Build both Windows artifacts, optional UPX compression, and checksums
 - `make test` - Run tests with coverage
-- `make docker-postgres` - Build the demo Postgres image
-- `make demo` - Run the end-to-end demo (depends on the demo image)
 - `make clean` - Remove build artifacts and demo containers
+- `make docker-postgres` / `make demo` - Legacy demo image + script (see `demo.sh`); prefer `demo/postgres-survive-kill9` with `docker compose up`
 
 **Dockerfile** - Multi-stage build:
 1. Builder: Go 1.23 alpine
@@ -105,8 +112,8 @@ require (
 **.github/workflows/ci.yml** - CI pipeline:
 - Test on Go 1.23
 - Build for linux/darwin, amd64/arm64
+- Demo smoke test: spins up `demo/postgres-survive-kill9`, kills Postgres with SIGKILL, asserts counter does not drop, checks metrics
 - Docker image builds
-- E2E test with demo.sh
 
 **.github/workflows/release-windows.yml** - Tagged builds publish Windows artifacts (amd64 + arm64) to GitHub releases.
 

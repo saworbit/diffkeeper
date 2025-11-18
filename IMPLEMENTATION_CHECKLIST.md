@@ -6,6 +6,8 @@ Use this checklist to track your progress building the MVP.
 
 ## Week 1: Core Implementation (40-50 hours)
 
+> Heads up: the canonical demo now lives in `demo/postgres-survive-kill9` (Docker Compose with chaos + verify scripts). The older `demo.sh`/`make demo` flow is kept for legacy reference only.
+
 ### Day 1: Project Setup & Core Agent (8 hours)  COMPLETE
 
 - [x] **Project initialization (1h)**
@@ -41,13 +43,13 @@ Use this checklist to track your progress building the MVP.
   - [x] Build: `docker build -t diffkeeper:latest .`
   - [x] Multi-stage build working
 
-- [x] **Postgres demo image (2h)**
+- [x] **Postgres demo image (2h)** *(legacy; now superseded by `demo/postgres-survive-kill9` multi-container demo)*
   - [x] Copy `Dockerfile.postgres` from artifacts
   - [x] Build: `docker build -f Dockerfile.postgres -t diffkeeper-postgres:latest .`
   - [x] Test startup and Postgres integration
   - [x] Verified DiffKeeper wraps Postgres successfully
 
-- [x] **Demo script (1h)**
+- [x] **Demo script (1h)** *(legacy; replaced by `demo/postgres-survive-kill9`)*
   - [x] Copy `demo.sh` from artifacts
   - [x] Make executable: `chmod +x demo.sh`
   - [x] Run: `bash demo.sh`
@@ -160,7 +162,7 @@ Use this checklist to track your progress building the MVP.
   - [x] Created `.github/workflows/ci.yml` with:
     - [x] Go 1.23 test matrix
     - [x] Multi-platform builds (linux/darwin, amd64/arm64)
-    - [x] Docker image builds
+    - [x] Docker image builds and demo smoke test (docker compose chaos for Postgres)
     - [x] golangci-lint
     - [x] Coverage reporting
   - [ ] Push and verify CI runs

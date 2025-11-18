@@ -11,31 +11,22 @@ Get DiffKeeper running in under 5 minutes!
 - Linux kernel 4.18+ for eBPF acceleration (older kernels automatically fall back to fsnotify)
 - 100MB free disk space
 
-## Option 1: Run the Demo (Fastest Way)
-
-This runs a complete end-to-end test with Postgres:
+## Option 1: 60-second Postgres demo (fastest)
 
 ```bash
-# Clone the repository
-git clone https://github.com/saworbit/diffkeeper
-cd diffkeeper
-
-# Run the full demo
-make demo
+git clone https://github.com/saworbit/diffkeeper.git
+cd diffkeeper/demo/postgres-survive-kill9
+docker compose up -d          # starts Postgres with DiffKeeper baked in
+./chaos.sh                    # randomly kill -9 the container
 ```
 
-**What the demo does:**
-1. Builds DiffKeeper + Postgres image
-2. Starts Postgres with DiffKeeper watching `/var/lib/postgresql/data`
-3. Creates test data (3 users in a table)
-4. **Kills the container** (simulating crash/eviction)
-5. Restarts the container
-6. **Verifies data survived** [OK]
+In another terminal:
 
-Expected output:
-```text
-[OK] SUCCESS! Data survived the nuke!
+```bash
+watch -n 1 'docker compose exec -T postgres psql -U postgres -d bench -c "SELECT count(*) FROM pgbench_history;"'
 ```
+
+The count should only increase even while the container is being SIGKILLed. Metrics live at `http://localhost:9911/metrics` (`diffkeeper_recovery_total`, `diffkeeper_delta_count`).
 
 ## Option 2: Use DiffKeeper with Your Own App
 
@@ -242,13 +233,12 @@ From our testing:
 
 **Your mileage may vary** based on hardware, file change patterns, and compression ratios.
 
-## Clean Up Demo
+## Clean up the demo
+
+From `demo/postgres-survive-kill9`:
 
 ```bash
-make clean
-# Or manually:
-docker rm -f diffkeeper-postgres-demo
-docker volume rm diffkeeper-deltas
+docker compose down -v
 ```
 
 ---
