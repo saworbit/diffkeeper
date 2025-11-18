@@ -81,6 +81,19 @@ ENTRYPOINT ["/usr/local/bin/diffkeeper", \
   "/your-original-entrypoint"]
 ```
 
+### Handling Huge Files (>1GB)
+- Streaming chunking is enabled by default. Tune chunk bounds for checkpoints or large blobs:
+  ```bash
+  ./bin/diffkeeper \
+    --enable-chunking \
+    --chunk-min=$((1*1024*1024)) \
+    --chunk-avg=$((8*1024*1024)) \
+    --chunk-max=$((64*1024*1024)) \
+    --chunk-hash-window=64 \
+    --state-dir=/data --store=/deltas/db.bolt -- your-app
+  ```
+- If your runner limits `MEMLOCK`, add `ulimit -l unlimited` before tests so eBPF loads cleanly; otherwise fsnotify fallback remains functional.
+
 ## Option 3: Kubernetes Deployment
 
 Apply the example StatefulSet:

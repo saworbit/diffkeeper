@@ -114,13 +114,14 @@ Helm values expose image tags, dedicated workload commands, and cache locations 
 - **Built-ins:** Go runtime + process collectors plus DiffKeeper metrics are namespaced under `diffkeeper_`.
 
 Key metrics to watch:
-- `diffkeeper_capture_duration_ms{type="file|diff|snapshot"}` â€“ histogram of capture latency
-- `diffkeeper_capture_total{type, outcome}` â€“ count of capture attempts by success/error
-- `diffkeeper_storage_saved_bytes_total` / `diffkeeper_storage_saved_ratio` â€“ cumulative and current storage efficiency
-- `diffkeeper_recovery_duration_ms{reason}` and `diffkeeper_recovery_total{outcome}` â€“ recovery performance and reliability
-- `diffkeeper_store_size_bytes{type="deltas|metadata|store_file"}` and `diffkeeper_files_tracked_total` â€“ BoltDB footprint and active file count
-- `diffkeeper_deltas_total{compression}` â€“ volume of diffs/snapshots written (bsdiff/gzip/none)
-- `diffkeeper_up` â€“ liveness gauge for the agent
+- `diffkeeper_capture_duration_ms{type="file|diff|snapshot"}` – histogram of capture latency
+- `diffkeeper_capture_total{type, outcome}` – count of capture attempts by success/error
+- `diffkeeper_storage_saved_bytes_total` / `diffkeeper_storage_saved_ratio` – cumulative and current storage efficiency
+- `diffkeeper_recovery_duration_ms{reason}` and `diffkeeper_recovery_total{outcome}` – recovery performance and reliability
+- `diffkeeper_chunk_total{outcome}`, `diffkeeper_chunk_dedup_ratio`, `diffkeeper_chunk_capture_duration_ms`, `diffkeeper_large_file_tracked_total` – chunking health and dedup efficiency for giant files
+- `diffkeeper_store_size_bytes{type="deltas|metadata|store_file"}` and `diffkeeper_files_tracked_total` – BoltDB footprint and active file count
+- `diffkeeper_deltas_total{compression}` – volume of diffs/snapshots written (bsdiff/gzip/none)
+- `diffkeeper_up` – liveness gauge for the agent
 
 Kubernetes ServiceMonitor example:
 
@@ -230,6 +231,19 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - `--dedup-scope`: Deduplication scope - "container" or "cluster" (default: container)
 - `--snapshot-interval`: Create full snapshot every N versions (default: 10)
 
+**Large Files & Chunking:**
+- Streaming chunked diffs are on by default for files >1GB. Tune for very large blobs:
+  ```bash
+  diffkeeper --enable-chunking \
+    --chunk-min=$((1*1024*1024)) \
+    --chunk-avg=$((8*1024*1024)) \
+    --chunk-max=$((64*1024*1024)) \
+    --chunk-hash-window=64 \
+    --state-dir=/data --store=/deltas/db.bolt -- your-app
+  ```
+- Fixed-size chunking still works via `--chunk-size`; content-defined chunking clamps to your min/avg/max bounds.
+- Metrics to watch when chunking: `diffkeeper_chunk_total`, `diffkeeper_chunk_dedup_ratio`, `diffkeeper_chunk_capture_duration_ms`, `diffkeeper_large_file_tracked_total`.
+
 **eBPF / Profiler Flags:**
 - `--enable-ebpf`: Turn on kernel-level interception (default: true)
 - `--ebpf-program`: Path to compiled `*.bpf.o` artifact (default: `bin/ebpf/diffkeeper.bpf.o`)
@@ -241,6 +255,8 @@ docker run -v ./deltas:/deltas nginx:alpine \
 - `--btf-cache-dir`: Cache directory for downloaded BTF specs (default: `/var/cache/diffkeeper/btf`)
 - `--btfhub-mirror`: Mirror URL for BTFHub-Archive assets (default: official GitHub mirror)
 - `--disable-btfhub-download`: Skip remote downloads (requires `/sys/kernel/btf/vmlinux`; otherwise falls back to fsnotify)
+
+> **Memlock tip:** Some CI runners cap `MEMLOCK`, which triggers a warning and fsnotify fallback. Add `ulimit -l unlimited` before `go test` if you want to keep eBPF active; otherwise the fallback remains functional.
 
 ### Watching Nested Directories
 
@@ -598,6 +614,7 @@ Try it: `go get github.com/saworbit/diffkeeper`
 ---
 
 **Maintainer:** Shane Anthony Wall (shaneawall@gmail.com)
+
 
 
 

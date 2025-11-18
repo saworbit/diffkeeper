@@ -1,5 +1,20 @@
 # DiffKeeper Release Notes
 
+## v2.0 Preview - November 18, 2025
+
+**Status:** Preview (eBPF + streaming chunking)
+
+### Highlights
+- Streaming chunked diffs for huge files: Rabin-Karp content-defined chunking (avg 8–64 MiB) streams >10GB files without OOM, compresses chunks with zstd, and replays via manifests.
+- Chunk-aware CAS: SHA256-addressed chunk helpers with refcounts and transparent compression on reads/writes.
+- New large-file metrics: `diffkeeper_chunk_total`, `diffkeeper_chunk_dedup_ratio`, `diffkeeper_chunk_capture_duration_ms`, `diffkeeper_large_file_tracked_total`.
+- Config + CLI knobs: `--enable-chunking`, `--chunk-min/avg/max`, `--chunk-hash-window`, plus `--chunk-size` for fixed-size workflows.
+- eBPF fallback hardening: cleaner logs and reliable fsnotify fallback when memlock is constrained.
+
+### Notes for CI
+- For runners with strict memlock, add `ulimit -l unlimited` before `go test` to silence eBPF warnings; fallback remains functional otherwise.
+- Integration suite (chunking included): `go test -tags integration ./...`.
+
 ## v1.0 Final - November 8, 2025
 
 **Status:** ✅ Production Ready
