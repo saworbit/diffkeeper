@@ -98,8 +98,8 @@ Helm values expose image tags, dedicated workload commands, and cache locations 
 2. Adaptive profiler samples those events every 100ms, computes exponential moving averages, and updates hot-path filters (<0.5% CPU steady state).
 3. Lifecycle tracer hooks `sched_process_exec` and CRI runtimes to auto-inject the agent into new pods/containers when `--auto-inject` is enabled.
 4. BlueShift receives filtered events, hashes changed files, and determines whether to produce a snapshot or binary diff.
-5. **Binary diff computation**: Compares current and previous versions (bsdiff/xdelta) while chunking >1GB files into 4MB slices.
-6. **Content-addressable storage (CAS)**: Deduplicates chunks/diffs by hash and persists them in BoltDB.
+5. **Binary diff computation**: Compares current and previous versions (bsdiff/xdelta) while streaming >1GB files through a Rabin-Karp content-defined chunker (avg 8MiB, min/max bounds).
+6. **Content-addressable storage (CAS)**: Deduplicates chunks/diffs by hash, zstd-compresses blobs, and persists them in BoltDB.
 7. **Merkle tree generation + metadata**: Every version stores Merkle roots, version counters, and chunk metadata to prevent corruption.
 8. **Periodic snapshots**: Full snapshots occur every N versions (default 10) to prevent long diff chains for hot files.
 9. On restart, RedShift replays metadata, verifies Merkle trees, and rebuilds state to disk in <100ms even under heavy churn.
@@ -220,7 +220,12 @@ docker run -v ./deltas:/deltas nginx:alpine \
 **Binary Diff Flags:**
 - `--enable-diff`: Enable binary diffs (default: true)
 - `--diff-library`: Diff algorithm - "bsdiff" or "xdelta" (default: bsdiff)
+- `--enable-chunking`: Enable streaming content-defined chunking for large files (default: true)
 - `--chunk-size`: Chunk size in MB for large files (default: 4)
+- `--chunk-min`: Minimum chunk size in bytes for the streaming chunker (default: 1MiB)
+- `--chunk-avg`: Target average chunk size in bytes (default: 8MiB)
+- `--chunk-max`: Maximum chunk size in bytes (default: 64MiB)
+- `--chunk-hash-window`: Rolling hash window size for chunk boundary detection (default: 64 bytes)
 - `--hash-algo`: Hash algorithm - "sha256" or "blake3" (default: sha256)
 - `--dedup-scope`: Deduplication scope - "container" or "cluster" (default: container)
 - `--snapshot-interval`: Create full snapshot every N versions (default: 10)
@@ -488,46 +493,34 @@ type DiffKeeper struct {
     diffEngine diff.DiffEngine          // bsdiff/xdelta engine
 }
 
-// BlueShift captures file changes (v1.0 with binary diffs)
-func (dk *DiffKeeper) BlueShiftDiff(path string) error {
-    // 1. Read current file
-    data, err := os.ReadFile(path)
+// BlueShift captures file changes (v1.1 with streaming chunking for giants)
+func (dk *DiffKeeper) captureChunked(relPath string, path string) error {
+    chunker := chunk.NewRabinChunker(file, chunk.Params{
+        MinSize: 1 << 20,  // 1MiB
+        AvgSize: 8 << 20,  // 8MiB
+        MaxSize: 64 << 20, // 64MiB
+        Window:  64,
+    })
 
-    // 2. Determine if snapshot or diff needed
-    isSnapshot := dk.shouldSnapshot(relPath)  // Every N versions
-    isChunked := dk.config.ShouldChunk(fileSize)  // >1GB files
+    manifest := &chunk.Manifest{}
+    var cids []string
 
-    if isSnapshot {
-        // Store full snapshot in CAS
-        if isChunked {
-            chunks := chunk.SplitFile(data, chunkSize)
-            for _, chunkData := range chunks {
-                cid := dk.cas.Put(chunkData)  // Returns content ID
-                cids = append(cids, cid)
-            }
-        } else {
-            cid := dk.cas.Put(data)
-            cids = append(cids, cid)
-        }
-    } else {
-        // Compute binary diff
-        prevData := dk.getPreviousVersion(relPath)
-        diffData := dk.diffEngine.ComputeDiff(prevData, data)
-        cid := dk.cas.Put(diffData)
+    for {
+        ch, err := chunker.Next()
+        if errors.Is(err, io.EOF) { break }
+        cid, _ := dk.cas.PutChunkWithHash(ch.Ref.Hash, ch.Data) // zstd-compressed blob
+        _ = dk.cas.AddReference(cid, relPath)
+        manifest.Chunks = append(manifest.Chunks, ch.Ref)
         cids = append(cids, cid)
     }
 
-    // 3. Build Merkle tree for integrity
     tree := dk.merkle.BuildTree(cids)
-    merkleRoot := merkle.GetRoot(tree)
-
-    // 4. Store metadata
     metadata := FileMetadata{
-        CIDs:       cids,
-        MerkleRoot: merkleRoot,
-        IsChunked:  isChunked,
-        IsSnapshot: isSnapshot,
-        VersionCount: prevVersion + 1,
+        CIDs:          cids,
+        ChunkManifest: manifest,
+        IsChunked:     true,
+        IsSnapshot:    true,
+        MerkleRoot:    merkle.GetRoot(tree),
     }
     return dk.storeMetadata(relPath, metadata)
 }

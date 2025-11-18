@@ -2,6 +2,8 @@ package chunk
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"testing"
 )
 
@@ -261,5 +263,47 @@ func BenchmarkReassembleChunks(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ReassembleChunks(chunks)
+	}
+}
+
+func TestRabinChunkerStreaming(t *testing.T) {
+	payload := bytes.Repeat([]byte("abc12345"), 512*1024) // ~4MB
+	params := Params{
+		MinSize: 256 * 1024,
+		AvgSize: 512 * 1024,
+		MaxSize: 1024 * 1024,
+		Window:  32,
+	}
+
+	chunker := NewRabinChunker(bytes.NewReader(payload), params)
+
+	var (
+		total int
+		refs  []ChunkRef
+	)
+
+	for {
+		ch, err := chunker.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("chunker.Next error: %v", err)
+		}
+		if int(ch.Ref.Length) > params.MaxSize {
+			t.Fatalf("chunk length %d exceeded max %d", ch.Ref.Length, params.MaxSize)
+		}
+		if int(ch.Ref.Offset) != total {
+			t.Fatalf("unexpected offset progression: got %d total %d", ch.Ref.Offset, total)
+		}
+		total += int(ch.Ref.Length)
+		refs = append(refs, ch.Ref)
+	}
+
+	if total != len(payload) {
+		t.Fatalf("total bytes %d != payload %d", total, len(payload))
+	}
+	if len(refs) == 0 {
+		t.Fatalf("expected at least one chunk")
 	}
 }

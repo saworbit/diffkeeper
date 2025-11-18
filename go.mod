@@ -7,9 +7,9 @@ require (
 	github.com/cilium/ebpf v0.15.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/gabstv/go-bsdiff v1.0.5
+	github.com/klauspost/compress v1.18.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/client_model v0.6.2
 	github.com/spf13/cobra v1.8.1
 	github.com/ulikunitz/xz v0.5.15
 	go.etcd.io/bbolt v1.3.10
@@ -25,6 +25,7 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-varint v0.0.6 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect

@@ -98,6 +98,44 @@ var (
 		},
 	)
 
+	// ChunkTotal counts chunk processing outcomes (new vs reuse).
+	ChunkTotal = promauto.With(Registry).NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "chunk_total",
+			Help:      "Total chunks processed during streaming capture",
+		},
+		[]string{"outcome"}, // new | reuse
+	)
+
+	// ChunkDedupRatio reports global dedup ratio across chunk captures.
+	ChunkDedupRatio = promauto.With(Registry).NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "chunk_dedup_ratio",
+			Help:      "Instant dedup ratio for content-defined chunking",
+		},
+	)
+
+	// ChunkCaptureDuration tracks streaming chunking latency.
+	ChunkCaptureDuration = promauto.With(Registry).NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "chunk_capture_duration_ms",
+			Help:      "Duration of streaming chunk capture in milliseconds",
+			Buckets:   []float64{5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000},
+		},
+	)
+
+	// LargeFilesTracked gauges the number of large files handled via chunking.
+	LargeFilesTracked = promauto.With(Registry).NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "large_file_tracked_total",
+			Help:      "Gauge of files above the chunking threshold currently tracked",
+		},
+	)
+
 	// DeltasTotal counts delta writes grouped by compression/diff strategy.
 	DeltasTotal = promauto.With(Registry).NewCounterVec(
 		prometheus.CounterOpts{
@@ -121,6 +159,8 @@ var (
 var (
 	totalWrittenBytes atomic.Int64
 	totalSavedBytes   atomic.Int64
+	chunkTotalCount   atomic.Int64
+	chunkReuseCount   atomic.Int64
 )
 
 func init() {
@@ -163,6 +203,27 @@ func ObserveRecovery(start time.Time, reason, outcome string) {
 	RecoveryTotal.WithLabelValues(outcome).Inc()
 }
 
+// ObserveChunk records a chunk outcome and updates dedup ratio.
+func ObserveChunk(outcome string) {
+	if outcome != "reuse" {
+		outcome = "new"
+	}
+	count := chunkTotalCount.Add(1)
+	if outcome == "reuse" {
+		reused := chunkReuseCount.Add(1)
+		if count > 0 {
+			ChunkDedupRatio.Set(float64(reused) / float64(count))
+		}
+	}
+	ChunkTotal.WithLabelValues(outcome).Inc()
+}
+
+// ObserveChunkCapture tracks the latency of a streaming chunking pass.
+func ObserveChunkCapture(start time.Time) {
+	elapsed := float64(time.Since(start)) / float64(time.Millisecond)
+	ChunkCaptureDuration.Observe(elapsed)
+}
+
 // SetStoreSize reports store footprint by category.
 func SetStoreSize(bucket string, sizeBytes int64) {
 	if sizeBytes < 0 {
@@ -177,6 +238,14 @@ func SetFilesTracked(count int) {
 		count = 0
 	}
 	FilesTracked.Set(float64(count))
+}
+
+// SetLargeFilesTracked sets the large file gauge used by streaming chunking.
+func SetLargeFilesTracked(count int) {
+	if count < 0 {
+		count = 0
+	}
+	LargeFilesTracked.Set(float64(count))
 }
 
 // AddDeltas increments the delta counter for a specific compression strategy.

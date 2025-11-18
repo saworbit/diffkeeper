@@ -16,6 +16,22 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected default chunk size 4MB, got %d", cfg.ChunkSizeMB)
 	}
 
+	if !cfg.EnableChunking {
+		t.Errorf("Expected streaming chunking to be enabled by default")
+	}
+	if cfg.ChunkMinBytes != 1*1024*1024 {
+		t.Errorf("Expected default chunk min 1MiB, got %d", cfg.ChunkMinBytes)
+	}
+	if cfg.ChunkAvgBytes != 8*1024*1024 {
+		t.Errorf("Expected default chunk avg 8MiB, got %d", cfg.ChunkAvgBytes)
+	}
+	if cfg.ChunkMaxBytes != 64*1024*1024 {
+		t.Errorf("Expected default chunk max 64MiB, got %d", cfg.ChunkMaxBytes)
+	}
+	if cfg.ChunkHashWindow != 64 {
+		t.Errorf("Expected default chunk hash window 64, got %d", cfg.ChunkHashWindow)
+	}
+
 	if cfg.HashAlgo != "sha256" {
 		t.Errorf("Expected default hash algo 'sha256', got '%s'", cfg.HashAlgo)
 	}
@@ -41,6 +57,11 @@ func TestLoadFromEnv(t *testing.T) {
 	// Set environment variables
 	os.Setenv("DIFFKEEPER_DIFF_LIBRARY", "xdelta")
 	os.Setenv("DIFFKEEPER_CHUNK_SIZE_MB", "8")
+	os.Setenv("DIFFKEEPER_ENABLE_CHUNKING", "false")
+	os.Setenv("DIFFKEEPER_CHUNK_MIN_BYTES", "512000")
+	os.Setenv("DIFFKEEPER_CHUNK_AVG_BYTES", "2048000")
+	os.Setenv("DIFFKEEPER_CHUNK_MAX_BYTES", "4096000")
+	os.Setenv("DIFFKEEPER_CHUNK_HASH_WINDOW", "32")
 	os.Setenv("DIFFKEEPER_HASH_ALGO", "blake3")
 	os.Setenv("DIFFKEEPER_DEDUP_SCOPE", "cluster")
 	os.Setenv("DIFFKEEPER_ENABLE_DIFF", "false")
@@ -49,6 +70,11 @@ func TestLoadFromEnv(t *testing.T) {
 	defer func() {
 		os.Unsetenv("DIFFKEEPER_DIFF_LIBRARY")
 		os.Unsetenv("DIFFKEEPER_CHUNK_SIZE_MB")
+		os.Unsetenv("DIFFKEEPER_ENABLE_CHUNKING")
+		os.Unsetenv("DIFFKEEPER_CHUNK_MIN_BYTES")
+		os.Unsetenv("DIFFKEEPER_CHUNK_AVG_BYTES")
+		os.Unsetenv("DIFFKEEPER_CHUNK_MAX_BYTES")
+		os.Unsetenv("DIFFKEEPER_CHUNK_HASH_WINDOW")
 		os.Unsetenv("DIFFKEEPER_HASH_ALGO")
 		os.Unsetenv("DIFFKEEPER_DEDUP_SCOPE")
 		os.Unsetenv("DIFFKEEPER_ENABLE_DIFF")
@@ -64,6 +90,22 @@ func TestLoadFromEnv(t *testing.T) {
 
 	if cfg.ChunkSizeMB != 8 {
 		t.Errorf("Expected chunk size 8MB, got %d", cfg.ChunkSizeMB)
+	}
+
+	if cfg.EnableChunking {
+		t.Error("Expected EnableChunking to be false")
+	}
+	if cfg.ChunkMinBytes != 512000 {
+		t.Errorf("Expected chunk min 512000, got %d", cfg.ChunkMinBytes)
+	}
+	if cfg.ChunkAvgBytes != 2048000 {
+		t.Errorf("Expected chunk avg 2048000, got %d", cfg.ChunkAvgBytes)
+	}
+	if cfg.ChunkMaxBytes != 4096000 {
+		t.Errorf("Expected chunk max 4096000, got %d", cfg.ChunkMaxBytes)
+	}
+	if cfg.ChunkHashWindow != 32 {
+		t.Errorf("Expected chunk hash window 32, got %d", cfg.ChunkHashWindow)
 	}
 
 	if cfg.HashAlgo != "blake3" {
@@ -100,62 +142,57 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name: "invalid diff library",
-			cfg: &DiffConfig{
-				Library:             "invalid",
-				ChunkSizeMB:         4,
-				HashAlgo:            "sha256",
-				DedupScope:          "container",
-				SnapshotInterval:    10,
-				ChunkThresholdBytes: 1024,
-			},
+			cfg: func() *DiffConfig {
+				c := DefaultConfig()
+				c.Library = "invalid"
+				return c
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "invalid chunk size",
-			cfg: &DiffConfig{
-				Library:             "bsdiff",
-				ChunkSizeMB:         -1,
-				HashAlgo:            "sha256",
-				DedupScope:          "container",
-				SnapshotInterval:    10,
-				ChunkThresholdBytes: 1024,
-			},
+			cfg: func() *DiffConfig {
+				c := DefaultConfig()
+				c.ChunkSizeMB = -1
+				return c
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "invalid hash algo",
-			cfg: &DiffConfig{
-				Library:             "bsdiff",
-				ChunkSizeMB:         4,
-				HashAlgo:            "md5",
-				DedupScope:          "container",
-				SnapshotInterval:    10,
-				ChunkThresholdBytes: 1024,
-			},
+			cfg: func() *DiffConfig {
+				c := DefaultConfig()
+				c.HashAlgo = "md5"
+				return c
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "invalid dedup scope",
-			cfg: &DiffConfig{
-				Library:             "bsdiff",
-				ChunkSizeMB:         4,
-				HashAlgo:            "sha256",
-				DedupScope:          "global",
-				SnapshotInterval:    10,
-				ChunkThresholdBytes: 1024,
-			},
+			cfg: func() *DiffConfig {
+				c := DefaultConfig()
+				c.DedupScope = "global"
+				return c
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "invalid snapshot interval",
-			cfg: &DiffConfig{
-				Library:             "bsdiff",
-				ChunkSizeMB:         4,
-				HashAlgo:            "sha256",
-				DedupScope:          "container",
-				SnapshotInterval:    0,
-				ChunkThresholdBytes: 1024,
-			},
+			cfg: func() *DiffConfig {
+				c := DefaultConfig()
+				c.SnapshotInterval = 0
+				return c
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "invalid chunk bounds",
+			cfg: func() *DiffConfig {
+				c := DefaultConfig()
+				c.ChunkMinBytes = 10
+				c.ChunkAvgBytes = 5
+				return c
+			}(),
 			wantErr: true,
 		},
 	}
@@ -180,7 +217,10 @@ func TestGetChunkSizeBytes(t *testing.T) {
 }
 
 func TestShouldChunk(t *testing.T) {
-	cfg := &DiffConfig{ChunkThresholdBytes: 1024 * 1024 * 1024} // 1GB
+	cfg := &DiffConfig{
+		ChunkThresholdBytes: 1024 * 1024 * 1024, // 1GB
+		EnableChunking:      true,
+	}
 
 	tests := []struct {
 		name     string

@@ -16,6 +16,21 @@ type DiffConfig struct {
 	// ChunkSizeMB is the chunk size in megabytes for large file processing
 	ChunkSizeMB int
 
+	// EnableChunking toggles streaming content-defined chunking for large files
+	EnableChunking bool
+
+	// ChunkMinBytes is the minimum chunk size (bytes) when chunking is enabled
+	ChunkMinBytes int
+
+	// ChunkAvgBytes is the target average chunk size (bytes)
+	ChunkAvgBytes int
+
+	// ChunkMaxBytes is the maximum chunk size (bytes)
+	ChunkMaxBytes int
+
+	// ChunkHashWindow controls the rolling hash window size in bytes
+	ChunkHashWindow int
+
 	// HashAlgo specifies the hash algorithm for CAS ("sha256" or "blake3")
 	HashAlgo string
 
@@ -65,6 +80,11 @@ func DefaultConfig() *DiffConfig {
 	return &DiffConfig{
 		Library:             "bsdiff",
 		ChunkSizeMB:         4,
+		EnableChunking:      true,
+		ChunkMinBytes:       1 * 1024 * 1024,  // 1MiB
+		ChunkAvgBytes:       8 * 1024 * 1024,  // 8MiB
+		ChunkMaxBytes:       64 * 1024 * 1024, // 64MiB
+		ChunkHashWindow:     64,               // 64 bytes rolling window
 		HashAlgo:            "sha256",
 		DedupScope:          "container",
 		EnableDiff:          true,
@@ -86,6 +106,29 @@ func LoadFromEnv() *DiffConfig {
 		if size, err := strconv.Atoi(chunkSize); err == nil {
 			cfg.ChunkSizeMB = size
 		}
+	}
+	if chunkMin := os.Getenv("DIFFKEEPER_CHUNK_MIN_BYTES"); chunkMin != "" {
+		if size, err := strconv.Atoi(chunkMin); err == nil {
+			cfg.ChunkMinBytes = size
+		}
+	}
+	if chunkAvg := os.Getenv("DIFFKEEPER_CHUNK_AVG_BYTES"); chunkAvg != "" {
+		if size, err := strconv.Atoi(chunkAvg); err == nil {
+			cfg.ChunkAvgBytes = size
+		}
+	}
+	if chunkMax := os.Getenv("DIFFKEEPER_CHUNK_MAX_BYTES"); chunkMax != "" {
+		if size, err := strconv.Atoi(chunkMax); err == nil {
+			cfg.ChunkMaxBytes = size
+		}
+	}
+	if window := os.Getenv("DIFFKEEPER_CHUNK_HASH_WINDOW"); window != "" {
+		if size, err := strconv.Atoi(window); err == nil {
+			cfg.ChunkHashWindow = size
+		}
+	}
+	if enableChunking := os.Getenv("DIFFKEEPER_ENABLE_CHUNKING"); enableChunking != "" {
+		cfg.EnableChunking = enableChunking == "1" || enableChunking == "true" || enableChunking == "TRUE"
 	}
 
 	if hashAlgo := os.Getenv("DIFFKEEPER_HASH_ALGO"); hashAlgo != "" {
@@ -127,6 +170,22 @@ func (c *DiffConfig) Validate() error {
 		return fmt.Errorf("chunk size must be positive, got: %d", c.ChunkSizeMB)
 	}
 
+	if c.ChunkMinBytes <= 0 || c.ChunkAvgBytes <= 0 || c.ChunkMaxBytes <= 0 {
+		return fmt.Errorf("chunk byte sizes must be positive (min=%d avg=%d max=%d)", c.ChunkMinBytes, c.ChunkAvgBytes, c.ChunkMaxBytes)
+	}
+
+	if c.ChunkMinBytes > c.ChunkAvgBytes {
+		return fmt.Errorf("chunk min size cannot exceed average (min=%d avg=%d)", c.ChunkMinBytes, c.ChunkAvgBytes)
+	}
+
+	if c.ChunkAvgBytes > c.ChunkMaxBytes {
+		return fmt.Errorf("chunk average size cannot exceed max (avg=%d max=%d)", c.ChunkAvgBytes, c.ChunkMaxBytes)
+	}
+
+	if c.ChunkHashWindow <= 0 {
+		return fmt.Errorf("chunk hash window must be positive, got: %d", c.ChunkHashWindow)
+	}
+
 	if c.HashAlgo != "sha256" && c.HashAlgo != "blake3" {
 		return fmt.Errorf("invalid hash algorithm: %s (must be 'sha256' or 'blake3')", c.HashAlgo)
 	}
@@ -157,7 +216,28 @@ func (c *DiffConfig) GetChunkSizeBytes() int {
 
 // ShouldChunk returns true if a file of the given size should be chunked
 func (c *DiffConfig) ShouldChunk(fileSize int64) bool {
+	if !c.EnableChunking {
+		return false
+	}
 	return fileSize > c.ChunkThresholdBytes
+}
+
+// ChunkingConfig models the normalized chunking knobs in byte units.
+type ChunkingConfig struct {
+	MinBytes   int
+	AvgBytes   int
+	MaxBytes   int
+	HashWindow int
+}
+
+// GetChunkingConfig returns chunking parameters in a single struct.
+func (c *DiffConfig) GetChunkingConfig() ChunkingConfig {
+	return ChunkingConfig{
+		MinBytes:   c.ChunkMinBytes,
+		AvgBytes:   c.ChunkAvgBytes,
+		MaxBytes:   c.ChunkMaxBytes,
+		HashWindow: c.ChunkHashWindow,
+	}
 }
 
 func defaultEBPFConfig() EBPFConfig {

@@ -1,9 +1,13 @@
 package cas
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/multiformats/go-multihash"
 	"go.etcd.io/bbolt"
 )
@@ -12,6 +16,8 @@ const (
 	BucketCAS     = "cas"
 	BucketCASRefs = "cas_refs"
 )
+
+const compressionMagic = "DKZ1"
 
 // CASStore implements content-addressable storage
 type CASStore struct {
@@ -77,36 +83,81 @@ func (c *CASStore) computeCID(data []byte) (string, error) {
 	return mh.B58String(), nil
 }
 
-// Put stores data in CAS and returns its CID
-// If the data already exists (same CID), it's deduplicated
-func (c *CASStore) Put(data []byte) (string, error) {
+// PutWithSize stores data in CAS and returns its CID along with the compressed bytes written.
+// If the CID already exists, the storedBytes value will be zero.
+func (c *CASStore) PutWithSize(data []byte) (string, int, error) {
 	cid, err := c.computeCID(data)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
-	// Check if already exists (deduplication)
 	exists, err := c.Has(cid)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	if exists {
-		// Already exists, no need to store again
-		return cid, nil
+		return cid, 0, nil
 	}
 
-	// Store in CAS bucket
+	compressed, err := compressForStorage(data)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to compress object: %w", err)
+	}
+
 	err = c.db.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(BucketCAS))
-		return bucket.Put([]byte(cid), data)
+		return bucket.Put([]byte(cid), compressed)
 	})
 
 	if err != nil {
-		return "", fmt.Errorf("failed to store in CAS: %w", err)
+		return "", 0, fmt.Errorf("failed to store in CAS: %w", err)
 	}
 
-	return cid, nil
+	return cid, len(compressed), nil
+}
+
+// Put stores data in CAS and returns its CID
+// If the data already exists (same CID), it's deduplicated
+func (c *CASStore) Put(data []byte) (string, error) {
+	cid, _, err := c.PutWithSize(data)
+	return cid, err
+}
+
+// PutChunkWithHash stores data keyed by a pre-computed SHA256 hash, returning the CID and compressed bytes written.
+func (c *CASStore) PutChunkWithHash(hash [32]byte, data []byte) (string, int, error) {
+	cid := hex.EncodeToString(hash[:])
+
+	exists, err := c.Has(cid)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if exists {
+		return cid, 0, nil
+	}
+
+	compressed, err := compressForStorage(data)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to compress chunk: %w", err)
+	}
+
+	err = c.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(BucketCAS))
+		return bucket.Put([]byte(cid), compressed)
+	})
+
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to store chunk in CAS: %w", err)
+	}
+
+	return cid, len(compressed), nil
+}
+
+// PutChunk stores chunk data using its SHA256 hash.
+func (c *CASStore) PutChunk(hash [32]byte, data []byte) (string, error) {
+	cid, _, err := c.PutChunkWithHash(hash, data)
+	return cid, err
 }
 
 // Get retrieves data from CAS by CID
@@ -121,14 +172,22 @@ func (c *CASStore) Get(cid string) ([]byte, error) {
 			return fmt.Errorf("CID not found: %s", cid)
 		}
 
-		// Copy data since it's only valid during transaction
-		data = make([]byte, len(value))
-		copy(data, value)
+		decompressed, err := decompressFromStorage(value)
+		if err != nil {
+			return fmt.Errorf("failed to decompress CID %s: %w", cid, err)
+		}
+
+		data = decompressed
 
 		return nil
 	})
 
 	return data, err
+}
+
+// GetChunk retrieves data using a pre-computed SHA256 hash.
+func (c *CASStore) GetChunk(hash [32]byte) ([]byte, error) {
+	return c.Get(hex.EncodeToString(hash[:]))
 }
 
 // Has checks if a CID exists in CAS
@@ -387,4 +446,59 @@ func (c *CASStore) GetStats() (CASStats, error) {
 	})
 
 	return stats, err
+}
+
+var (
+	zstdEncoderOnce sync.Once
+	zstdDecoderOnce sync.Once
+	zstdEncoder     *zstd.Encoder
+	zstdDecoder     *zstd.Decoder
+	zstdInitErr     error
+)
+
+func getZstdEncoder() (*zstd.Encoder, error) {
+	zstdEncoderOnce.Do(func() {
+		enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
+		if err != nil {
+			zstdInitErr = err
+			return
+		}
+		zstdEncoder = enc
+	})
+	return zstdEncoder, zstdInitErr
+}
+
+func getZstdDecoder() (*zstd.Decoder, error) {
+	zstdDecoderOnce.Do(func() {
+		dec, err := zstd.NewReader(nil)
+		if err != nil {
+			zstdInitErr = err
+			return
+		}
+		zstdDecoder = dec
+	})
+	return zstdDecoder, zstdInitErr
+}
+
+func compressForStorage(data []byte) ([]byte, error) {
+	enc, err := getZstdEncoder()
+	if err != nil {
+		return nil, err
+	}
+	dst := enc.EncodeAll(data, nil)
+	return append([]byte(compressionMagic), dst...), nil
+}
+
+func decompressFromStorage(data []byte) ([]byte, error) {
+	if len(data) < len(compressionMagic) || !bytes.Equal(data[:len(compressionMagic)], []byte(compressionMagic)) {
+		out := make([]byte, len(data))
+		copy(out, data)
+		return out, nil
+	}
+
+	dec, err := getZstdDecoder()
+	if err != nil {
+		return nil, err
+	}
+	return dec.DecodeAll(data[len(compressionMagic):], nil)
 }

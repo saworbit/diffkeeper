@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -194,6 +195,57 @@ func (dk *DiffKeeper) getMetadata(relPath string) (*FileMetadata, error) {
 	return &meta, nil
 }
 
+func (dk *DiffKeeper) storeChunkManifest(relPath string, manifest *chunk.Manifest) error {
+	if manifest == nil {
+		return fmt.Errorf("chunk manifest is nil for %s", relPath)
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to marshal chunk manifest: %w", err)
+	}
+	return dk.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(BucketChunkIndex))
+		if bucket == nil {
+			return fmt.Errorf("chunk index bucket missing")
+		}
+		return bucket.Put([]byte(relPath), data)
+	})
+}
+
+func (dk *DiffKeeper) getChunkManifest(relPath string) (*chunk.Manifest, error) {
+	var manifest chunk.Manifest
+	err := dk.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(BucketChunkIndex))
+		if bucket == nil {
+			return fmt.Errorf("chunk index bucket missing")
+		}
+		raw := bucket.Get([]byte(relPath))
+		if raw == nil {
+			return fmt.Errorf("chunk manifest not found for %s", relPath)
+		}
+		return json.Unmarshal(raw, &manifest)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &manifest, nil
+}
+
+func (dk *DiffKeeper) countChunkedFiles() (int, error) {
+	count := 0
+	err := dk.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(BucketChunkIndex))
+		if bucket == nil {
+			return fmt.Errorf("chunk index bucket missing")
+		}
+		return bucket.ForEach(func(k, v []byte) error {
+			count++
+			return nil
+		})
+	})
+	return count, err
+}
+
 // getPreviousVersion fetches the previous version of a file from CAS
 func (dk *DiffKeeper) getPreviousVersion(relPath string) ([]byte, error) {
 	// Get metadata
@@ -204,6 +256,9 @@ func (dk *DiffKeeper) getPreviousVersion(relPath string) ([]byte, error) {
 
 	// If it's a snapshot, fetch the full data
 	if meta.IsSnapshot {
+		if meta.IsChunked {
+			return nil, fmt.Errorf("chunked snapshots cannot be loaded fully; use manifest replay")
+		}
 		if len(meta.CIDs) == 0 {
 			return nil, fmt.Errorf("snapshot has no CIDs")
 		}
@@ -216,6 +271,10 @@ func (dk *DiffKeeper) getPreviousVersion(relPath string) ([]byte, error) {
 
 // reconstructFile reconstructs a file from its diffs and base snapshot
 func (dk *DiffKeeper) reconstructFile(meta *FileMetadata) ([]byte, error) {
+	if meta.IsChunked {
+		return nil, fmt.Errorf("chunked files must be restored via manifest, not diff reconstruction")
+	}
+
 	// Verify we have a base snapshot CID to start from
 	if meta.BaseSnapshotCID == "" {
 		return nil, fmt.Errorf("no base snapshot CID found for diff reconstruction")
@@ -277,6 +336,192 @@ func (dk *DiffKeeper) shouldSnapshot(relPath string) bool {
 	return shouldSnap
 }
 
+func (dk *DiffKeeper) captureChunked(relPath, absPath string, fileSize int64, prevHash string) error {
+	start := time.Now()
+	cfg := dk.config.GetChunkingConfig()
+	params := chunk.Params{
+		MinSize: cfg.MinBytes,
+		AvgSize: cfg.AvgBytes,
+		MaxSize: cfg.MaxBytes,
+		Window:  cfg.HashWindow,
+	}
+
+	f, err := os.Open(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to open %s for chunking: %w", absPath, err)
+	}
+	defer f.Close()
+
+	chunker := chunk.NewRabinChunker(f, params)
+	manifest := &chunk.Manifest{
+		Timestamp: time.Now(),
+	}
+	var (
+		chunkRefs   []chunk.ChunkRef
+		cids        []string
+		totalStored int64
+	)
+	hasher := sha256.New()
+
+	for {
+		ch, err := chunker.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("chunker failed for %s: %w", relPath, err)
+		}
+
+		if _, err := hasher.Write(ch.Data); err != nil {
+			return fmt.Errorf("failed to hash chunk for %s: %w", relPath, err)
+		}
+
+		cid, written, err := dk.cas.PutChunkWithHash(ch.Ref.Hash, ch.Data)
+		if err != nil {
+			return fmt.Errorf("failed to store chunk for %s: %w", relPath, err)
+		}
+		if written == 0 {
+			metrics.ObserveChunk("reuse")
+		} else {
+			totalStored += int64(written)
+			metrics.ObserveChunk("new")
+		}
+
+		if err := dk.cas.AddReference(cid, relPath); err != nil {
+			return fmt.Errorf("failed to add chunk reference for %s: %w", relPath, err)
+		}
+
+		chunkRefs = append(chunkRefs, ch.Ref)
+		cids = append(cids, cid)
+	}
+
+	if len(chunkRefs) == 0 {
+		emptyHash := sha256.Sum256(nil)
+		cid, written, err := dk.cas.PutChunkWithHash(emptyHash, []byte{})
+		if err != nil {
+			return fmt.Errorf("failed to store empty chunk for %s: %w", relPath, err)
+		}
+		if written == 0 {
+			metrics.ObserveChunk("reuse")
+		} else {
+			totalStored += int64(written)
+			metrics.ObserveChunk("new")
+		}
+		chunkRefs = append(chunkRefs, chunk.ChunkRef{Hash: emptyHash, Offset: 0, Length: 0})
+		cids = append(cids, cid)
+	}
+
+	newHash := hex.EncodeToString(hasher.Sum(nil))
+	if prevHash == newHash {
+		return nil
+	}
+
+	versionCount := 1
+	if prevMeta, err := dk.getMetadata(relPath); err == nil {
+		versionCount = prevMeta.VersionCount + 1
+	}
+
+	manifest.Version = uint64(versionCount)
+	manifest.Chunks = chunkRefs
+
+	if err := dk.storeChunkManifest(relPath, manifest); err != nil {
+		return err
+	}
+
+	tree, err := dk.merkle.BuildTree(cids)
+	if err != nil {
+		return fmt.Errorf("failed to build merkle tree: %w", err)
+	}
+
+	metadata := FileMetadata{
+		FilePath:        relPath,
+		CIDs:            cids,
+		MerkleRoot:      merkle.GetRoot(tree),
+		IsChunked:       true,
+		ChunkManifest:   manifest,
+		IsSnapshot:      true,
+		BaseSnapshotCID: "",
+		VersionCount:    versionCount,
+		Timestamp:       manifest.Timestamp,
+		OriginalSize:    fileSize,
+		CompressedSize:  totalStored,
+	}
+
+	if err := dk.storeMetadata(relPath, metadata); err != nil {
+		return fmt.Errorf("failed to store metadata: %w", err)
+	}
+
+	if err := dk.db.Update(func(tx *bbolt.Tx) error {
+		hashes := tx.Bucket([]byte(BucketHashes))
+		return hashes.Put([]byte(relPath), []byte(newHash))
+	}); err != nil {
+		return err
+	}
+
+	if count, err := dk.countChunkedFiles(); err == nil {
+		metrics.SetLargeFilesTracked(count)
+	}
+
+	metrics.ObserveStorageSavings(fileSize, totalStored)
+	metrics.ObserveChunkCapture(start)
+
+	compressionRatio := 0.0
+	if fileSize > 0 {
+		compressionRatio = float64(totalStored) / float64(fileSize) * 100
+	}
+	log.Printf("[BlueShiftDiff] Captured %s (chunked snapshot, %.2f KB stored, %.1f%% compression, %d chunks)",
+		relPath, float64(totalStored)/1024, compressionRatio, len(chunkRefs))
+
+	return nil
+}
+
+func (dk *DiffKeeper) restoreChunkedFile(relPath string, meta *FileMetadata) error {
+	manifest := meta.ChunkManifest
+	if manifest == nil {
+		var err error
+		manifest, err = dk.getChunkManifest(relPath)
+		if err != nil {
+			return fmt.Errorf("chunk manifest missing for %s: %w", relPath, err)
+		}
+	}
+
+	fullPath := filepath.Join(dk.stateDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return fmt.Errorf("failed to create dir for %s: %w", relPath, err)
+	}
+
+	f, err := os.Create(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to create %s: %w", relPath, err)
+	}
+	defer f.Close()
+
+	var totalSize int64
+	for _, ref := range manifest.Chunks {
+		chunkData, err := dk.cas.GetChunk(ref.Hash)
+		if err != nil {
+			return fmt.Errorf("failed to fetch chunk for %s: %w", relPath, err)
+		}
+		if len(chunkData) != int(ref.Length) {
+			return fmt.Errorf("chunk length mismatch for %s: expected %d got %d", relPath, ref.Length, len(chunkData))
+		}
+		if _, err := f.WriteAt(chunkData, int64(ref.Offset)); err != nil {
+			return fmt.Errorf("failed to write chunk for %s: %w", relPath, err)
+		}
+		if end := int64(ref.Offset) + int64(ref.Length); end > totalSize {
+			totalSize = end
+		}
+	}
+
+	if totalSize > 0 {
+		if err := f.Truncate(totalSize); err != nil {
+			return fmt.Errorf("failed to finalize %s: %w", relPath, err)
+		}
+	}
+
+	return nil
+}
+
 // BlueShiftDiff captures file changes using binary diffs
 func (dk *DiffKeeper) BlueShiftDiff(path string) (err error) {
 	start := time.Now()
@@ -303,17 +548,11 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) (err error) {
 		return err
 	}
 
-	// Read current file
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-
-	fileSize := int64(len(data))
-
-	// Compute hash
-	hash := sha256.Sum256(data)
-	newHash := hex.EncodeToString(hash[:])
+	fileSize := info.Size()
 
 	// Check if changed
 	var prevHash string
@@ -327,13 +566,26 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) (err error) {
 		return fmt.Errorf("failed to read previous hash: %w", err)
 	}
 
-	if prevHash == newHash {
-		return nil // No change
-	}
-
 	// Determine if we should create a snapshot or diff
 	isSnapshot := dk.shouldSnapshot(relPath)
 	isChunked := dk.config.ShouldChunk(fileSize)
+	if isChunked {
+		captureType = "chunk"
+		return dk.captureChunked(relPath, path, fileSize, prevHash)
+	}
+
+	// Read current file into memory for non-chunked paths
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// Compute hash after reading
+	hash := sha256.Sum256(data)
+	newHash := hex.EncodeToString(hash[:])
+
+	if prevHash == newHash {
+		return nil
+	}
 	forceSnapshot := prevHash == ""
 
 	var prevData []byte
@@ -356,30 +608,15 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) (err error) {
 		var snapshotCIDs []string
 		var compressedSize int64
 
-		if isChunked {
-			chunks := chunk.SplitFile(data, dk.config.GetChunkSizeBytes())
-			for _, chunkData := range chunks {
-				cid, err := dk.cas.Put(chunkData)
-				if err != nil {
-					return nil, 0, fmt.Errorf("failed to store chunk: %w", err)
-				}
-				if err := dk.cas.AddReference(cid, relPath); err != nil {
-					return nil, 0, fmt.Errorf("failed to add chunk reference: %w", err)
-				}
-				snapshotCIDs = append(snapshotCIDs, cid)
-				compressedSize += int64(len(chunkData))
-			}
-		} else {
-			cid, err := dk.cas.Put(data)
-			if err != nil {
-				return nil, 0, fmt.Errorf("failed to store snapshot: %w", err)
-			}
-			if err := dk.cas.AddReference(cid, relPath); err != nil {
-				return nil, 0, fmt.Errorf("failed to add snapshot reference: %w", err)
-			}
-			snapshotCIDs = append(snapshotCIDs, cid)
-			compressedSize = int64(len(data))
+		cid, err := dk.cas.Put(data)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to store snapshot: %w", err)
 		}
+		if err := dk.cas.AddReference(cid, relPath); err != nil {
+			return nil, 0, fmt.Errorf("failed to add snapshot reference: %w", err)
+		}
+		snapshotCIDs = append(snapshotCIDs, cid)
+		compressedSize = int64(len(data))
 
 		return snapshotCIDs, compressedSize, nil
 	}
@@ -389,47 +626,20 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) (err error) {
 		var diffCIDs []string
 		var compressedSize int64
 
-		if isChunked {
-			chunks := chunk.SplitFile(data, dk.config.GetChunkSizeBytes())
-			prevChunks := chunk.SplitFile(previous, dk.config.GetChunkSizeBytes())
-
-			if len(chunks) != len(prevChunks) {
-				logDebug("[BlueShiftDiff] Chunk count changed, creating snapshot")
-				return nil, 0, errForceSnapshot
-			}
-
-			for i, chunkData := range chunks {
-				diffData, err := dk.diffEngine.ComputeDiff(prevChunks[i], chunkData)
-				if err != nil {
-					return nil, 0, fmt.Errorf("failed to compute diff for chunk %d: %w", i, err)
-				}
-
-				cid, err := dk.cas.Put(diffData)
-				if err != nil {
-					return nil, 0, fmt.Errorf("failed to store diff chunk: %w", err)
-				}
-				if err := dk.cas.AddReference(cid, relPath); err != nil {
-					return nil, 0, fmt.Errorf("failed to add diff chunk reference: %w", err)
-				}
-				diffCIDs = append(diffCIDs, cid)
-				compressedSize += int64(len(diffData))
-			}
-		} else {
-			diffData, err := dk.diffEngine.ComputeDiff(previous, data)
-			if err != nil {
-				return nil, 0, fmt.Errorf("failed to compute diff: %w", err)
-			}
-
-			cid, err := dk.cas.Put(diffData)
-			if err != nil {
-				return nil, 0, fmt.Errorf("failed to store diff: %w", err)
-			}
-			if err := dk.cas.AddReference(cid, relPath); err != nil {
-				return nil, 0, fmt.Errorf("failed to add diff reference: %w", err)
-			}
-			diffCIDs = append(diffCIDs, cid)
-			compressedSize = int64(len(diffData))
+		diffData, err := dk.diffEngine.ComputeDiff(previous, data)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to compute diff: %w", err)
 		}
+
+		cid, err := dk.cas.Put(diffData)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to store diff: %w", err)
+		}
+		if err := dk.cas.AddReference(cid, relPath); err != nil {
+			return nil, 0, fmt.Errorf("failed to add diff reference: %w", err)
+		}
+		diffCIDs = append(diffCIDs, cid)
+		compressedSize = int64(len(diffData))
 
 		return diffCIDs, compressedSize, nil
 	}
@@ -594,29 +804,24 @@ func (dk *DiffKeeper) RedShiftDiff() (err error) {
 			var err error
 
 			if meta.IsSnapshot {
+				if meta.IsChunked {
+					if err := dk.restoreChunkedFile(relPath, &meta); err != nil {
+						return fmt.Errorf("failed to restore chunked snapshot for %s: %w", relPath, err)
+					}
+					count++
+					continue
+				}
+
 				// Fetch snapshot
 				if len(meta.CIDs) == 0 {
 					log.Printf("Warning: snapshot %s has no CIDs", relPath)
 					continue
 				}
 
-				if meta.IsChunked {
-					// Reassemble chunks
-					var chunks [][]byte
-					for _, cid := range meta.CIDs {
-						chunkData, err := dk.cas.Get(cid)
-						if err != nil {
-							return fmt.Errorf("failed to fetch chunk for %s: %w", relPath, err)
-						}
-						chunks = append(chunks, chunkData)
-					}
-					data = chunk.ReassembleChunks(chunks)
-				} else {
-					// Single snapshot
-					data, err = dk.cas.Get(meta.CIDs[0])
-					if err != nil {
-						return fmt.Errorf("failed to fetch snapshot for %s: %w", relPath, err)
-					}
+				// Single snapshot
+				data, err = dk.cas.Get(meta.CIDs[0])
+				if err != nil {
+					return fmt.Errorf("failed to fetch snapshot for %s: %w", relPath, err)
 				}
 			} else {
 				// Reconstruct from diff

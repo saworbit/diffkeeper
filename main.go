@@ -21,6 +21,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/saworbit/diffkeeper/internal/metrics"
 	"github.com/saworbit/diffkeeper/pkg/cas"
+	"github.com/saworbit/diffkeeper/pkg/chunk"
 	"github.com/saworbit/diffkeeper/pkg/config"
 	"github.com/saworbit/diffkeeper/pkg/diff"
 	"github.com/saworbit/diffkeeper/pkg/ebpf"
@@ -34,6 +35,7 @@ const (
 	BucketHashes     = "hashes"    // File hash tracking
 	BucketMetadata   = "meta"      // File metadata (versions, Merkle roots)
 	BucketSnapshots  = "snapshots" // Periodic base snapshots
+	BucketChunkIndex = "chunk_index"
 	SchemaVersionKey = "schema_version"
 
 	SchemaVersionMVP  = 1 // MVP: full gzip storage
@@ -67,16 +69,17 @@ type DiffKeeper struct {
 
 // FileMetadata stores metadata for files using binary diffs
 type FileMetadata struct {
-	FilePath        string    `json:"file_path"`
-	CIDs            []string  `json:"cids"`              // List of CIDs (chunks or diffs)
-	MerkleRoot      []byte    `json:"merkle_root"`       // Merkle tree root hash
-	IsChunked       bool      `json:"is_chunked"`        // Whether file was chunked
-	IsSnapshot      bool      `json:"is_snapshot"`       // Whether this is a full snapshot
-	BaseSnapshotCID string    `json:"base_snapshot_cid"` // CID of base snapshot for diff chains
-	VersionCount    int       `json:"version_count"`     // Number of versions captured
-	Timestamp       time.Time `json:"timestamp"`         // When this version was captured
-	OriginalSize    int64     `json:"original_size"`     // Original file size
-	CompressedSize  int64     `json:"compressed_size"`   // Compressed/diff size
+	FilePath        string          `json:"file_path"`
+	CIDs            []string        `json:"cids"`                     // List of CIDs (chunks or diffs)
+	MerkleRoot      []byte          `json:"merkle_root"`              // Merkle tree root hash
+	IsChunked       bool            `json:"is_chunked"`               // Whether file was chunked
+	ChunkManifest   *chunk.Manifest `json:"chunk_manifest,omitempty"` // Streaming chunk manifest for large files
+	IsSnapshot      bool            `json:"is_snapshot"`              // Whether this is a full snapshot
+	BaseSnapshotCID string          `json:"base_snapshot_cid"`        // CID of base snapshot for diff chains
+	VersionCount    int             `json:"version_count"`            // Number of versions captured
+	Timestamp       time.Time       `json:"timestamp"`                // When this version was captured
+	OriginalSize    int64           `json:"original_size"`            // Original file size
+	CompressedSize  int64           `json:"compressed_size"`          // Compressed/diff size
 }
 
 func (dk *DiffKeeper) addWatchRecursive(root string) error {
@@ -381,7 +384,7 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 
 	// Initialize buckets
 	err = db.Update(func(tx *bbolt.Tx) error {
-		for _, bucket := range []string{BucketDeltas, BucketHashes, BucketMetadata, BucketSnapshots} {
+		for _, bucket := range []string{BucketDeltas, BucketHashes, BucketMetadata, BucketSnapshots, BucketChunkIndex} {
 			if _, err := tx.CreateBucketIfNotExists([]byte(bucket)); err != nil {
 				return err
 			}
@@ -792,7 +795,12 @@ func main() {
 		// Binary diff configuration
 		enableDiff       bool
 		diffLibrary      string
+		enableChunking   bool
 		chunkSizeMB      int
+		chunkMinBytes    int
+		chunkAvgBytes    int
+		chunkMaxBytes    int
+		chunkHashWindow  int
 		hashAlgo         string
 		dedupScope       string
 		snapshotInterval int
@@ -838,8 +846,23 @@ Example:
 			if cmd.Flags().Changed("diff-library") {
 				cfg.Library = diffLibrary
 			}
+			if cmd.Flags().Changed("enable-chunking") {
+				cfg.EnableChunking = enableChunking
+			}
 			if cmd.Flags().Changed("chunk-size") {
 				cfg.ChunkSizeMB = chunkSizeMB
+			}
+			if cmd.Flags().Changed("chunk-min") {
+				cfg.ChunkMinBytes = chunkMinBytes
+			}
+			if cmd.Flags().Changed("chunk-avg") {
+				cfg.ChunkAvgBytes = chunkAvgBytes
+			}
+			if cmd.Flags().Changed("chunk-max") {
+				cfg.ChunkMaxBytes = chunkMaxBytes
+			}
+			if cmd.Flags().Changed("chunk-hash-window") {
+				cfg.ChunkHashWindow = chunkHashWindow
 			}
 			if cmd.Flags().Changed("hash-algo") {
 				cfg.HashAlgo = hashAlgo
@@ -887,8 +910,9 @@ Example:
 			}
 
 			if cfg.EnableDiff {
-				log.Printf("[Config] Binary diffs enabled (library: %s, chunk size: %dMB, hash: %s)",
-					cfg.Library, cfg.ChunkSizeMB, cfg.HashAlgo)
+				log.Printf("[Config] Binary diffs enabled (library: %s, chunk size: %dMB, hash: %s, chunking=%t avg=%dMiB max=%dMiB)",
+					cfg.Library, cfg.ChunkSizeMB, cfg.HashAlgo, cfg.EnableChunking,
+					cfg.ChunkAvgBytes/(1024*1024), cfg.ChunkMaxBytes/(1024*1024))
 			} else {
 				log.Println("[Config] Using legacy MVP mode (full file compression)")
 			}
@@ -945,7 +969,12 @@ Example:
 	// Binary diff flags
 	rootCmd.Flags().BoolVar(&enableDiff, "enable-diff", true, "Enable binary diffs (default: true)")
 	rootCmd.Flags().StringVar(&diffLibrary, "diff-library", "bsdiff", "Diff library to use (bsdiff or xdelta)")
+	rootCmd.Flags().BoolVar(&enableChunking, "enable-chunking", true, "Enable streaming content-defined chunking for large files")
 	rootCmd.Flags().IntVar(&chunkSizeMB, "chunk-size", 4, "Chunk size in MB for large files")
+	rootCmd.Flags().IntVar(&chunkMinBytes, "chunk-min", 1*1024*1024, "Minimum chunk size for streaming chunker (bytes)")
+	rootCmd.Flags().IntVar(&chunkAvgBytes, "chunk-avg", 8*1024*1024, "Target average chunk size for streaming chunker (bytes)")
+	rootCmd.Flags().IntVar(&chunkMaxBytes, "chunk-max", 64*1024*1024, "Maximum chunk size for streaming chunker (bytes)")
+	rootCmd.Flags().IntVar(&chunkHashWindow, "chunk-hash-window", 64, "Rolling hash window size in bytes for chunk boundary detection")
 	rootCmd.Flags().StringVar(&hashAlgo, "hash-algo", "sha256", "Hash algorithm for CAS (sha256 or blake3)")
 	rootCmd.Flags().StringVar(&dedupScope, "dedup-scope", "container", "Deduplication scope (container or cluster)")
 	rootCmd.Flags().IntVar(&snapshotInterval, "snapshot-interval", 10, "Create full snapshot every N versions")
