@@ -108,6 +108,39 @@ Helm values expose image tags, dedicated workload commands, and cache locations 
 
 ---
 
+## Observability
+
+- **Endpoint:** Prometheus metrics served on `:9911/metrics` by default (override with `--metrics-addr` or `DIFFKEEPER_METRICS_ADDR`). A dedicated listener keeps observability isolated from control traffic.
+- **Built-ins:** Go runtime + process collectors plus DiffKeeper metrics are namespaced under `diffkeeper_`.
+
+Key metrics to watch:
+- `diffkeeper_capture_duration_ms{type="file|diff|snapshot"}` – histogram of capture latency
+- `diffkeeper_capture_total{type, outcome}` – count of capture attempts by success/error
+- `diffkeeper_storage_saved_bytes_total` / `diffkeeper_storage_saved_ratio` – cumulative and current storage efficiency
+- `diffkeeper_recovery_duration_ms{reason}` and `diffkeeper_recovery_total{outcome}` – recovery performance and reliability
+- `diffkeeper_store_size_bytes{type="deltas|metadata|store_file"}` and `diffkeeper_files_tracked_total` – BoltDB footprint and active file count
+- `diffkeeper_deltas_total{compression}` – volume of diffs/snapshots written (bsdiff/gzip/none)
+- `diffkeeper_up` – liveness gauge for the agent
+
+Kubernetes ServiceMonitor example:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: diffkeeper
+spec:
+  selector:
+    matchLabels:
+      app: diffkeeper
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
+```
+
+---
+
 ## Quick Start
 
 ### Prerequisites

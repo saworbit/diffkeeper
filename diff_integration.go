@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/saworbit/diffkeeper/internal/metrics"
 	"github.com/saworbit/diffkeeper/pkg/chunk"
 	"github.com/saworbit/diffkeeper/pkg/merkle"
 	"go.etcd.io/bbolt"
@@ -277,7 +278,17 @@ func (dk *DiffKeeper) shouldSnapshot(relPath string) bool {
 }
 
 // BlueShiftDiff captures file changes using binary diffs
-func (dk *DiffKeeper) BlueShiftDiff(path string) error {
+func (dk *DiffKeeper) BlueShiftDiff(path string) (err error) {
+	start := time.Now()
+	outcome := "success"
+	captureType := "diff"
+	defer func() {
+		if err != nil {
+			outcome = "error"
+		}
+		metrics.ObserveCapture(start, captureType, outcome)
+	}()
+
 	// Check if shutdown is in progress before accessing database
 	if dk.monitorCtx != nil {
 		select {
@@ -447,6 +458,10 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 		totalCompressedSize = compressedSize
 	}
 
+	if isSnapshot {
+		captureType = "snapshot"
+	}
+
 	// Get previous version count and base snapshot CID
 	versionCount := 1
 	var baseSnapshotCID string
@@ -513,27 +528,43 @@ func (dk *DiffKeeper) BlueShiftDiff(path string) error {
 		return hashes.Put([]byte(relPath), []byte(newHash))
 	})
 
-	if err == nil {
-		compressionRatio := float64(totalCompressedSize) / float64(fileSize) * 100
-		logType := "snapshot"
-		if !isSnapshot {
-			logType = "diff"
-		}
-		log.Printf("[BlueShiftDiff] Captured %s (%s, %.2f KB, %.1f%% compression)",
-			relPath, logType, float64(totalCompressedSize)/1024, compressionRatio)
+	if err != nil {
+		return err
 	}
 
-	return err
+	metrics.ObserveStorageSavings(fileSize, totalCompressedSize)
+	compressionLabel := "none"
+	if !isSnapshot && dk.config != nil && dk.config.Library != "" {
+		compressionLabel = dk.config.Library
+	}
+	metrics.AddDeltas(compressionLabel, len(cids))
+
+	compressionRatio := float64(totalCompressedSize) / float64(fileSize) * 100
+	logType := "snapshot"
+	if !isSnapshot {
+		logType = "diff"
+	}
+	log.Printf("[BlueShiftDiff] Captured %s (%s, %.2f KB, %.1f%% compression)",
+		relPath, logType, float64(totalCompressedSize)/1024, compressionRatio)
+
+	return nil
 }
 
 // RedShiftDiff restores files using binary diffs
-func (dk *DiffKeeper) RedShiftDiff() error {
+func (dk *DiffKeeper) RedShiftDiff() (err error) {
 	log.Println("[RedShiftDiff] Restoring state from binary diffs...")
 
 	startTime := time.Now()
 	count := 0
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		metrics.ObserveRecovery(startTime, "startup", outcome)
+	}()
 
-	err := dk.db.View(func(tx *bbolt.Tx) error {
+	err = dk.db.View(func(tx *bbolt.Tx) error {
 		metaBucket := tx.Bucket([]byte(BucketMetadata))
 		c := metaBucket.Cursor()
 

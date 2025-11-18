@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/saworbit/diffkeeper/internal/metrics"
 	"github.com/saworbit/diffkeeper/pkg/cas"
 	"github.com/saworbit/diffkeeper/pkg/config"
 	"github.com/saworbit/diffkeeper/pkg/diff"
@@ -116,6 +117,7 @@ func (dk *DiffKeeper) StartMonitoring(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	dk.monitorCtx, dk.cancelMon = context.WithCancel(ctx)
+	dk.startMetricsCollectors()
 
 	if dk.ebpfMgr != nil {
 		if err := dk.ebpfMgr.Start(dk.monitorCtx); err != nil {
@@ -160,6 +162,57 @@ func (dk *DiffKeeper) startWatcherLoop() {
 			log.Printf("[Watcher] Loop exited: %v", err)
 		}
 	}()
+}
+
+func (dk *DiffKeeper) startMetricsCollectors() {
+	if dk.monitorCtx == nil {
+		dk.monitorCtx, dk.cancelMon = context.WithCancel(context.Background())
+	}
+
+	dk.wg.Add(1)
+	go func() {
+		defer dk.wg.Done()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+
+		dk.publishStoreMetrics()
+
+		for {
+			select {
+			case <-dk.monitorCtx.Done():
+				return
+			case <-ticker.C:
+				dk.publishStoreMetrics()
+			}
+		}
+	}()
+}
+
+func (dk *DiffKeeper) publishStoreMetrics() {
+	if dk.db == nil {
+		return
+	}
+
+	if info, err := os.Stat(dk.storePath); err == nil {
+		metrics.SetStoreSize("store_file", info.Size())
+	}
+
+	_ = dk.db.View(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket([]byte(BucketDeltas)); b != nil {
+			stats := b.Stats()
+			metrics.SetStoreSize("deltas", int64(stats.LeafInuse+stats.BranchInuse))
+		}
+		if b := tx.Bucket([]byte(BucketMetadata)); b != nil {
+			stats := b.Stats()
+			metrics.SetStoreSize("metadata", int64(stats.LeafInuse+stats.BranchInuse))
+			tracked := stats.KeyN
+			if tracked > 0 {
+				tracked-- // Exclude schema version entry
+			}
+			metrics.SetFilesTracked(tracked)
+		}
+		return nil
+	})
 }
 
 func (dk *DiffKeeper) startEBPFWorkers() {
@@ -308,11 +361,11 @@ func (dk *DiffKeeper) shouldCapturePath(path string) bool {
 
 // NewDiffKeeper initializes a DiffKeeper instance with the specified state directory,
 // BoltDB store path, and configuration. It performs the following initialization steps:
-//   1. Opens the BoltDB database at storePath with a 1-second timeout
-//   2. Creates required buckets (deltas, hashes, metadata, snapshots) if they don't exist
-//   3. Performs an explicit writability test to ensure the database accepts writes
-//   4. Initializes the monitoring backend (eBPF or fsnotify) based on configuration
-//   5. Initializes the CAS store and diff engine if binary diffs are enabled
+//  1. Opens the BoltDB database at storePath with a 1-second timeout
+//  2. Creates required buckets (deltas, hashes, metadata, snapshots) if they don't exist
+//  3. Performs an explicit writability test to ensure the database accepts writes
+//  4. Initializes the monitoring backend (eBPF or fsnotify) based on configuration
+//  5. Initializes the CAS store and diff engine if binary diffs are enabled
 //
 // Returns an error if:
 //   - The database cannot be opened
@@ -455,8 +508,11 @@ func (dk *DiffKeeper) Close() error {
 		dk.ebpfMgr.Close()
 	}
 	if dk.db != nil {
-		return dk.db.Close()
+		err := dk.db.Close()
+		metrics.SetUp(false)
+		return err
 	}
+	metrics.SetUp(false)
 	return nil
 }
 
@@ -474,13 +530,20 @@ func (dk *DiffKeeper) RedShift() error {
 }
 
 // redShiftMVP: Legacy MVP implementation (full file decompression)
-func (dk *DiffKeeper) redShiftMVP() error {
+func (dk *DiffKeeper) redShiftMVP() (err error) {
 	log.Println("[RedShift] Restoring state from deltas...")
 
 	startTime := time.Now()
 	count := 0
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		metrics.ObserveRecovery(startTime, "startup", outcome)
+	}()
 
-	err := dk.db.View(func(tx *bbolt.Tx) error {
+	err = dk.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(BucketDeltas))
 		if b == nil {
 			return nil // No deltas to restore
@@ -531,7 +594,17 @@ func (dk *DiffKeeper) BlueShift(path string) error {
 }
 
 // blueShiftMVP: Legacy MVP implementation (full file compression)
-func (dk *DiffKeeper) blueShiftMVP(path string) error {
+func (dk *DiffKeeper) blueShiftMVP(path string) (err error) {
+	start := time.Now()
+	outcome := "success"
+	captureType := "file"
+	defer func() {
+		if err != nil {
+			outcome = "error"
+		}
+		metrics.ObserveCapture(start, captureType, outcome)
+	}()
+
 	// Check if shutdown is in progress before accessing database
 	if dk.monitorCtx != nil {
 		select {
@@ -597,10 +670,15 @@ func (dk *DiffKeeper) blueShiftMVP(path string) error {
 		return hashes.Put([]byte(relPath), []byte(newHash))
 	})
 
-	if err == nil {
-		log.Printf("[BlueShift] Captured %s (%.2f KB compressed)", relPath, float64(len(compressed))/1024)
+	if err != nil {
+		return err
 	}
-	return err
+
+	metrics.ObserveStorageSavings(info.Size(), int64(len(compressed)))
+	metrics.AddDeltas("gzip", 1)
+
+	log.Printf("[BlueShift] Captured %s (%.2f KB compressed)", relPath, float64(len(compressed))/1024)
+	return nil
 }
 
 // Watch filesystem and capture changes
@@ -701,9 +779,15 @@ func decompressData(data []byte) ([]byte, error) {
 }
 
 func main() {
+	metricsAddrDefault := ":9911"
+	if envAddr := os.Getenv("DIFFKEEPER_METRICS_ADDR"); envAddr != "" {
+		metricsAddrDefault = envAddr
+	}
+
 	var (
-		stateDir  string
-		storePath string
+		stateDir    string
+		storePath   string
+		metricsAddr string
 
 		// Binary diff configuration
 		enableDiff       bool
@@ -816,6 +900,15 @@ Example:
 			}
 			defer dk.Close()
 
+			metricsCtx, metricsCancel := context.WithCancel(context.Background())
+			defer metricsCancel()
+			go func() {
+				defer metrics.SetUp(false)
+				if err := metrics.Serve(metricsCtx, metricsAddr, log.Default()); err != nil {
+					log.Printf("[Metrics] server exited: %v", err)
+				}
+			}()
+
 			// Phase 1: RedShift - Restore state
 			if err := dk.RedShift(); err != nil {
 				return fmt.Errorf("redshift failed: %w", err)
@@ -846,6 +939,7 @@ Example:
 	// Core flags
 	rootCmd.Flags().StringVar(&stateDir, "state-dir", "/data", "Directory to watch for state changes")
 	rootCmd.Flags().StringVar(&storePath, "store", "/deltas/db.bolt", "Path to delta storage file")
+	rootCmd.Flags().StringVar(&metricsAddr, "metrics-addr", metricsAddrDefault, "Address to expose Prometheus metrics")
 	rootCmd.PersistentFlags().BoolVar(&debugEnabled, "debug", false, "Enable verbose debug logging")
 
 	// Binary diff flags
