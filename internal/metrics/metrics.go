@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -146,6 +147,16 @@ var (
 		[]string{"compression"}, // bsdiff | gzip | none
 	)
 
+	// AgentInfo exposes static information about the running agent.
+	AgentInfo = promauto.With(Registry).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "agent_info",
+			Help:      "Static information about the agent",
+		},
+		[]string{"os", "arch", "version", "capture_backend"},
+	)
+
 	// Up is a liveness gauge for the agent.
 	Up = promauto.With(Registry).NewGauge(
 		prometheus.GaugeOpts{
@@ -167,6 +178,23 @@ func init() {
 	Registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	Registry.MustRegister(prometheus.NewGoCollector())
 	Up.Set(1)
+}
+
+// SetAgentInfo publishes a single info metric for the running agent.
+func SetAgentInfo(osName, arch, version, captureBackend string) {
+	if osName == "" {
+		osName = runtime.GOOS
+	}
+	if arch == "" {
+		arch = runtime.GOARCH
+	}
+	if captureBackend == "" {
+		captureBackend = "unknown"
+	}
+	if version == "" {
+		version = "dev"
+	}
+	AgentInfo.WithLabelValues(osName, arch, version, captureBackend).Set(1)
 }
 
 // ObserveCapture records timing and counters for capture operations.

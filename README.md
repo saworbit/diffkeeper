@@ -12,6 +12,28 @@
 **Author:** Shane Anthony Wall
 **Contact:** shaneawall@gmail.com
 
+## Native Windows Support (v1.2+)
+
+DiffKeeper now ships a **zero-dependency native Windows executable**.
+
+```powershell
+# Recommended: install via Scoop (Windows package manager)
+scoop bucket add saworbit https://github.com/saworbit/scoop-bucket
+scoop install diffkeeper
+
+# Or download directly
+iwr https://github.com/saworbit/diffkeeper/releases/download/v1.2.0/diffkeeper-windows-amd64.exe -OutFile diffkeeper.exe
+```
+
+Perfect for:
+
+- Local LLM fine-tuning (Ollama, LM Studio)
+- Game server persistence
+- ML checkpoint versioning on your laptop
+- Running inside Docker Desktop for Windows
+
+No WSL. No Linux. Just double-click performance.
+
 ---
 
 ## The Problem
@@ -47,7 +69,7 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 ```
 
 **Key Benefits:**
-- **Sub-Âµs capture latency**: Kernel interception fires within <1Âµs for write/pwrite/writev
+- **Sub-µs capture latency**: Kernel interception fires within <1µs for write/pwrite/writev
 - **<0.5% CPU overhead**: Adaptive eBPF profiler traces only predicted hot paths
 - **Compile once, run everywhere**: CO-RE probes + BTFHub downloads adapt to mixed kernels (4.18+) with no per-node rebuilds
 - **50-80% storage savings**: Binary diffs store only changed bytes
@@ -64,9 +86,9 @@ DiffKeeper is a 6.5MB Go agent that runs inside your container to:
 
 The repository ships with ready-to-run manifests under [`k8s/`](k8s/README.md):
 
-- `k8s/deployment.yaml` – Sidecar pattern with init-container replay.
-- `k8s/rbac.yaml` – Minimal service account + ClusterRoleBinding.
-- `k8s/helm/diffkeeper` – Helm chart for production clusters (configurable state dir, BTF cache, workloads).
+- `k8s/deployment.yaml` � Sidecar pattern with init-container replay.
+- `k8s/rbac.yaml` � Minimal service account + ClusterRoleBinding.
+- `k8s/helm/diffkeeper` � Helm chart for production clusters (configurable state dir, BTF cache, workloads).
 
 ```bash
 kubectl apply -f k8s/rbac.yaml
@@ -94,7 +116,7 @@ Helm values expose image tags, dedicated workload commands, and cache locations 
 ```
 
 **How it works (v2.0 with eBPF + Binary Diffs):**
-1. eBPF manager (kprobes on `vfs_write`, `pwrite`, `writev`) emits syscall events in <1Âµs via perf buffers (fsnotify acts as fallback when kernels lack eBPF).
+1. eBPF manager (kprobes on `vfs_write`, `pwrite`, `writev`) emits syscall events in <1µs via perf buffers (fsnotify acts as fallback when kernels lack eBPF).
 2. Adaptive profiler samples those events every 100ms, computes exponential moving averages, and updates hot-path filters (<0.5% CPU steady state).
 3. Lifecycle tracer hooks `sched_process_exec` and CRI runtimes to auto-inject the agent into new pods/containers when `--auto-inject` is enabled.
 4. BlueShift receives filtered events, hashes changed files, and determines whether to produce a snapshot or binary diff.
@@ -104,7 +126,7 @@ Helm values expose image tags, dedicated workload commands, and cache locations 
 8. **Periodic snapshots**: Full snapshots occur every N versions (default 10) to prevent long diff chains for hot files.
 9. On restart, RedShift replays metadata, verifies Merkle trees, and rebuilds state to disk in <100ms even under heavy churn.
 
-**BTF/CO-RE Portability:** DiffKeeper automatically looks for `/sys/kernel/btf/vmlinux`, falls back to a cached copy in `--btf-cache-dir`, or downloads a tailored BTF from [BTFHub-Archive](https://github.com/aquasecurity/btfhub-archive). The loader feeds that spec into CO-RE programs so the same `diffkeeper.bpf.o` runs across Ubuntu, CentOS, Fedora, Amazon Linux, and other kernels â‰¥4.18 without recompilation. See [docs/btf-core-guide.md](docs/btf-core-guide.md) for setup details and [docs/supported-kernels.md](docs/supported-kernels.md) for the current compatibility matrix.
+**BTF/CO-RE Portability:** DiffKeeper automatically looks for `/sys/kernel/btf/vmlinux`, falls back to a cached copy in `--btf-cache-dir`, or downloads a tailored BTF from [BTFHub-Archive](https://github.com/aquasecurity/btfhub-archive). The loader feeds that spec into CO-RE programs so the same `diffkeeper.bpf.o` runs across Ubuntu, CentOS, Fedora, Amazon Linux, and other kernels ≥4.18 without recompilation. See [docs/btf-core-guide.md](docs/btf-core-guide.md) for setup details and [docs/supported-kernels.md](docs/supported-kernels.md) for the current compatibility matrix.
 
 ---
 
@@ -114,14 +136,14 @@ Helm values expose image tags, dedicated workload commands, and cache locations 
 - **Built-ins:** Go runtime + process collectors plus DiffKeeper metrics are namespaced under `diffkeeper_`.
 
 Key metrics to watch:
-- `diffkeeper_capture_duration_ms{type="file|diff|snapshot"}` � histogram of capture latency
-- `diffkeeper_capture_total{type, outcome}` � count of capture attempts by success/error
-- `diffkeeper_storage_saved_bytes_total` / `diffkeeper_storage_saved_ratio` � cumulative and current storage efficiency
-- `diffkeeper_recovery_duration_ms{reason}` and `diffkeeper_recovery_total{outcome}` � recovery performance and reliability
-- `diffkeeper_chunk_total{outcome}`, `diffkeeper_chunk_dedup_ratio`, `diffkeeper_chunk_capture_duration_ms`, `diffkeeper_large_file_tracked_total` � chunking health and dedup efficiency for giant files
-- `diffkeeper_store_size_bytes{type="deltas|metadata|store_file"}` and `diffkeeper_files_tracked_total` � BoltDB footprint and active file count
-- `diffkeeper_deltas_total{compression}` � volume of diffs/snapshots written (bsdiff/gzip/none)
-- `diffkeeper_up` � liveness gauge for the agent
+- `diffkeeper_capture_duration_ms{type="file|diff|snapshot"}` ? histogram of capture latency
+- `diffkeeper_capture_total{type, outcome}` ? count of capture attempts by success/error
+- `diffkeeper_storage_saved_bytes_total` / `diffkeeper_storage_saved_ratio` ? cumulative and current storage efficiency
+- `diffkeeper_recovery_duration_ms{reason}` and `diffkeeper_recovery_total{outcome}` ? recovery performance and reliability
+- `diffkeeper_chunk_total{outcome}`, `diffkeeper_chunk_dedup_ratio`, `diffkeeper_chunk_capture_duration_ms`, `diffkeeper_large_file_tracked_total` ? chunking health and dedup efficiency for giant files
+- `diffkeeper_store_size_bytes{type="deltas|metadata|store_file"}` and `diffkeeper_files_tracked_total` ? BoltDB footprint and active file count
+- `diffkeeper_deltas_total{compression}` ? volume of diffs/snapshots written (bsdiff/gzip/none)
+- `diffkeeper_up` ? liveness gauge for the agent
 
 Kubernetes ServiceMonitor example:
 
@@ -338,7 +360,7 @@ spec:
 | **Agent binary size** | 6.5MB | Tested on Windows/Linux |
 | **Storage savings (binary diffs)** | **85.7%** | Measured with 1MB file, 20 versions (10% changes each) |
 | **Recovery time (10MB file)** | 11.5ms | Including Merkle verification + chunk reassembly |
-| **Recovery time (per file avg)** | 20.67Âµs | CAS retrieval + integrity check |
+| **Recovery time (per file avg)** | 20.67µs | CAS retrieval + integrity check |
 | **Capture time (1MB file)** | 19.6ms | Includes diff computation, CAS storage, Merkle tree |
 | **CPU overhead (idle)** | 0.1% | File watching only |
 | **CPU overhead (active writes)** | 1-3% | Diff computation + storage |
@@ -350,8 +372,8 @@ spec:
 |-----------|------|-------------|
 | **Diff computation (1MB)** | 18.4ms | bsdiff binary diff algorithm |
 | **Chunking (10MB file)** | 46.2ms | Split into 4MB chunks |
-| **Merkle verification** | 933Âµs | Integrity check per file |
-| **CAS lookup** | 134Âµs | Content-addressable retrieval |
+| **Merkle verification** | 933µs | Integrity check per file |
+| **CAS lookup** | 134µs | Content-addressable retrieval |
 | **Multi-file recovery (61 files)** | 170ms | 2.79ms per file average |
 
 ### Deduplication Efficiency
@@ -371,7 +393,7 @@ spec:
 - Diff chain test: 25 versions, recovery in 1.55ms
 
 **Known Limitations (v1.0 Final):**
-- âœ… Diff reconstruction: **COMPLETE** (85.7% storage savings achieved)
+- ✅ Diff reconstruction: **COMPLETE** (85.7% storage savings achieved)
 - High-write workloads (>10k writes/sec): Consider eBPF-based approach (v2.0)
 - Large file changes (>1GB): Automatic chunking at 1GB threshold
 - Database workloads: Use native WAL/replication instead
@@ -406,30 +428,30 @@ spec:
 
 ## Roadmap
 
-### v1.0 Final (Current - November 2025) âœ…
+### v1.0 Final (Current - November 2025) ✅
 
 **Core Features:**
-- âœ… **Binary diff engine** (bsdiff implementation)
-- âœ… **Diff chain reconstruction** (BaseSnapshotCID tracking + sequential patch application)
-- âœ… **Content-addressable storage (CAS)** with SHA256/BLAKE3 hashing
-- âœ… **Merkle tree integrity verification**
-- âœ… **Large file chunking** (automatic at 1GB threshold, configurable chunk size)
-- âœ… **Deduplication** (identical content stored once)
-- âœ… **Periodic snapshots** (every N versions to prevent long diff chains)
-- âœ… **Schema migration** (MVP â†’ v1.0 automatic upgrade)
-- âœ… **CLI configuration** (enable-diff, diff-library, chunk-size, hash-algo, etc.)
+- ✅ **Binary diff engine** (bsdiff implementation)
+- ✅ **Diff chain reconstruction** (BaseSnapshotCID tracking + sequential patch application)
+- ✅ **Content-addressable storage (CAS)** with SHA256/BLAKE3 hashing
+- ✅ **Merkle tree integrity verification**
+- ✅ **Large file chunking** (automatic at 1GB threshold, configurable chunk size)
+- ✅ **Deduplication** (identical content stored once)
+- ✅ **Periodic snapshots** (every N versions to prevent long diff chains)
+- ✅ **Schema migration** (MVP → v1.0 automatic upgrade)
+- ✅ **CLI configuration** (enable-diff, diff-library, chunk-size, hash-algo, etc.)
 
 **Testing & Validation:**
-- âœ… **72 tests passing** (100% pass rate)
-- âœ… **25+ version diff chains tested** (TestDiffChain20Plus)
-- âœ… **85.7% storage savings measured** (1MB file, 20 versions, 10% changes)
-- âœ… **Sub-2ms recovery** for complex diff chains
+- ✅ **72 tests passing** (100% pass rate)
+- ✅ **25+ version diff chains tested** (TestDiffChain20Plus)
+- ✅ **85.7% storage savings measured** (1MB file, 20 versions, 10% changes)
+- ✅ **Sub-2ms recovery** for complex diff chains
 
 **v1.0 Final Status:**
-- âœ… Diff reconstruction fully implemented and tested
-- âœ… Storage savings verified (85.7% for incremental updates)
-- âœ… Performance targets exceeded (<100ms recovery, >80% savings)
-- âœ… Ready for production deployment
+- ✅ Diff reconstruction fully implemented and tested
+- ✅ Storage savings verified (85.7% for incremental updates)
+- ✅ Performance targets exceeded (<100ms recovery, >80% savings)
+- ✅ Ready for production deployment
 
 **Production Ready:**
 - Binary diff mode fully functional (no snapshot-only fallback)
@@ -441,7 +463,7 @@ spec:
 - [ ] **Production testing** (Docker + Kubernetes workloads)
 - [ ] **ML checkpoint benchmark** (real PyTorch/TensorFlow workload)
 - [ ] **Kubernetes manifests** (StatefulSet examples with PVC)
-- [ ] **Migration guide** (MVP â†’ v1.0 for existing deployments)
+- [ ] **Migration guide** (MVP → v1.0 for existing deployments)
 - [ ] **Docker image** (official DiffKeeper container)
 
 ### v2.0+ (Future)
@@ -579,16 +601,16 @@ func (dk *DiffKeeper) RedShiftDiff() error {
 For full implementation, see [main.go](main.go) and [diff_integration.go](diff_integration.go).
 
 - **Guides**
-  - [docs/ebpf-dev-setup.md](docs/ebpf-dev-setup.md) – Toolchain + BTF cache walk-through
-  - [docs/ebpf-guide.md](docs/ebpf-guide.md) – Kernel probe troubleshooting tips
-  - [docs/btf-core-guide.md](docs/btf-core-guide.md) – Using BTFHub downloads and CO-RE in production
-  - [docs/supported-kernels.md](docs/supported-kernels.md) – Reference list of tested distros/kernels
-  - [docs/auto-injection.md](docs/auto-injection.md) – Wiring CRI traces + injector workflows
+  - [docs/ebpf-dev-setup.md](docs/ebpf-dev-setup.md) � Toolchain + BTF cache walk-through
+  - [docs/ebpf-guide.md](docs/ebpf-guide.md) � Kernel probe troubleshooting tips
+  - [docs/btf-core-guide.md](docs/btf-core-guide.md) � Using BTFHub downloads and CO-RE in production
+  - [docs/supported-kernels.md](docs/supported-kernels.md) � Reference list of tested distros/kernels
+  - [docs/auto-injection.md](docs/auto-injection.md) � Wiring CRI traces + injector workflows
 - **Security & Operations**
-  - [SECURITY.md](SECURITY.md) – How to report vulnerabilities
-  - [k8s/README.md](k8s/README.md) – Deployments, Helm chart, and RBAC
+  - [SECURITY.md](SECURITY.md) � How to report vulnerabilities
+  - [k8s/README.md](k8s/README.md) � Deployments, Helm chart, and RBAC
 - **Reference**
-  - [docs/patents.md](docs/patents.md) – Prior art & IP notes for profiler + auto-injection features
+  - [docs/patents.md](docs/patents.md) � Prior art & IP notes for profiler + auto-injection features
 
 ---
 
@@ -614,6 +636,8 @@ Try it: `go get github.com/saworbit/diffkeeper`
 ---
 
 **Maintainer:** Shane Anthony Wall (shaneawall@gmail.com)
+
+
 
 
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/saworbit/diffkeeper/internal/metrics"
+	"github.com/saworbit/diffkeeper/internal/platform"
+	"github.com/saworbit/diffkeeper/internal/version"
 	"github.com/saworbit/diffkeeper/pkg/cas"
 	"github.com/saworbit/diffkeeper/pkg/chunk"
 	"github.com/saworbit/diffkeeper/pkg/config"
@@ -377,6 +380,8 @@ func (dk *DiffKeeper) shouldCapturePath(path string) bool {
 //   - eBPF initialization fails (when fallback is disabled)
 //   - CAS or diff engine initialization fails
 func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKeeper, error) {
+	storePath = platform.LongPathname(storePath)
+
 	db, err := bbolt.Open(storePath, 0600, &bbolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open store: %w", err)
@@ -422,6 +427,13 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 		monitor string
 	)
 
+	if runtime.GOOS == "windows" {
+		log.Println("[Monitor] Windows detected -> forcing fsnotify backend (eBPF unavailable)")
+		if cfg != nil {
+			cfg.EBPF.Enable = false
+		}
+	}
+
 	if cfg != nil && cfg.EBPF.Enable {
 		if mgr, err := ebpf.NewManager(stateDir, &cfg.EBPF); err != nil {
 			if cfg.EBPF.FallbackFSNotify {
@@ -445,6 +457,7 @@ func NewDiffKeeper(stateDir, storePath string, cfg *config.DiffConfig) (*DiffKee
 		monitor = "fsnotify"
 	}
 	log.Printf("[Monitor] configured backend: %s", monitor)
+	metrics.SetAgentInfo(runtime.GOOS, runtime.GOARCH, version.Version, monitor)
 
 	// Initialize CAS store
 	casStore, err := cas.NewCASStore(db, cfg.HashAlgo)

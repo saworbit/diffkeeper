@@ -17,6 +17,7 @@ import (
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
+	"github.com/saworbit/diffkeeper/internal/platform"
 	"github.com/saworbit/diffkeeper/pkg/config"
 )
 
@@ -120,7 +121,8 @@ func (m *kernelManager) loadObjects(opts *ebpf.CollectionOptions) error {
 		return loadBpfObjects(&m.objs, opts)
 	}
 
-	f, err := os.Open(m.cfg.ProgramPath)
+	programPath := platform.LongPathname(m.cfg.ProgramPath)
+	f, err := os.Open(programPath)
 	if err != nil {
 		return fmt.Errorf("open eBPF object (%s): %w", m.cfg.ProgramPath, err)
 	}

@@ -55,3 +55,16 @@ clean:
 release: build
 	@echo "[release] Generating snapshot artifacts..."
 	goreleaser release --snapshot --clean
+
+# Windows targets
+build-windows-amd64:
+	@echo "Building Windows AMD64..."
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/diffkeeper-windows-amd64.exe .
+
+build-windows-arm64:
+	@echo "Building Windows ARM64..."
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o bin/diffkeeper-windows-arm64.exe .
+
+release-windows: build-windows-amd64 build-windows-arm64
+	upx --best --lzma bin/diffkeeper-windows-*.exe || echo "upx not installed - skipping compression"
+	sha256sum bin/diffkeeper-windows-*.exe > bin/diffkeeper-windows-sha256.txt

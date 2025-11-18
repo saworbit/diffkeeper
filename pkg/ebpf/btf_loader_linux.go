@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf/btf"
+	"github.com/saworbit/diffkeeper/internal/platform"
 	"github.com/saworbit/diffkeeper/pkg/config"
 	"github.com/ulikunitz/xz"
 )
@@ -147,6 +148,7 @@ func (l *BTFLoader) downloadAndCache(ctx context.Context, info kernelInfo, destP
 }
 
 func extractBTFArchive(archivePath, destPath string) error {
+	archivePath = platform.LongPathname(archivePath)
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("open BTF archive: %w", err)

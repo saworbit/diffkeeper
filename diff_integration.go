@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/saworbit/diffkeeper/internal/metrics"
+	"github.com/saworbit/diffkeeper/internal/platform"
 	"github.com/saworbit/diffkeeper/pkg/chunk"
 	"github.com/saworbit/diffkeeper/pkg/merkle"
 	"go.etcd.io/bbolt"
@@ -359,6 +360,7 @@ func (dk *DiffKeeper) captureChunked(relPath, absPath string, fileSize int64, pr
 		Window:  cfg.HashWindow,
 	}
 
+	absPath = platform.LongPathname(absPath)
 	f, err := os.Open(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to open %s for chunking: %w", absPath, err)

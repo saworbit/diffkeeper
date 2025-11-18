@@ -25,6 +25,7 @@ diffkeeper/
 |-- .github/
 |   |-- workflows/
 |       |-- ci.yml
+|       |-- release-windows.yml
 |-- docs/
 |   |-- auto-injection.md
 |   |-- btf-core-guide.md
@@ -33,9 +34,13 @@ diffkeeper/
 |   |-- supported-kernels.md
 |-- internal/
 |   |-- metrics/       # Prometheus registry, collectors, /metrics server
+|   |-- platform/      # Platform-specific helpers (LongPathname on Windows)
+|   |-- version/       # Centralized version constant for metrics/CLI
 |-- ebpf/
 |   |-- diffkeeper.bpf.c
 |-- bin/                # build output (gitignored)
+|   |-- diffkeeper-windows-amd64.exe
+|   |-- diffkeeper-windows-arm64.exe
 |-- test-data/          # sample input fixtures
 |-- test-deltas/        # sample delta output
 |-- .claude/            # local editor settings (ignored)
@@ -84,6 +89,8 @@ require (
 **Makefile** - Build targets:
 - `make build` - Local binary
 - `make build-ebpf` - Compile eBPF probes (requires clang + ebpf/vmlinux.h)
+- `make build-windows-amd64` / `make build-windows-arm64` - Native Windows binaries (CGO disabled)
+- `make release-windows` - Build both Windows artifacts, optional UPX compression, and checksums
 - `make test` - Run tests with coverage
 - `make docker-postgres` - Build the demo Postgres image
 - `make demo` - Run the end-to-end demo (depends on the demo image)
@@ -100,6 +107,8 @@ require (
 - Build for linux/darwin, amd64/arm64
 - Docker image builds
 - E2E test with demo.sh
+
+**.github/workflows/release-windows.yml** - Tagged builds publish Windows artifacts (amd64 + arm64) to GitHub releases.
 
 ### Scripts
 

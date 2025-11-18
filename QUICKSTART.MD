@@ -100,7 +100,27 @@ ENTRYPOINT ["/usr/local/bin/diffkeeper", \
   ```
 - If your runner limits `MEMLOCK`, add `ulimit -l unlimited` before tests so eBPF loads cleanly; otherwise fsnotify fallback remains functional.
 
-## Option 3: Kubernetes Deployment
+## Option 3: Native Windows
+
+No WSL or Docker Desktop required.
+
+```powershell
+# Download release binary
+iwr https://github.com/saworbit/diffkeeper/releases/download/v1.2.0/diffkeeper-windows-amd64.exe -OutFile diffkeeper.exe
+
+# Or build from source (requires Go 1.23+)
+$env:CGO_ENABLED=0; $env:GOOS='windows'; $env:GOARCH='amd64'
+go build -trimpath -ldflags="-s -w" -o bin/diffkeeper-windows-amd64.exe .
+
+# Smoke test (PowerShell)
+mkdir state,deltas
+echo "hello world" > state\test.txt
+.\bin\diffkeeper-windows-amd64.exe --state-dir state --store deltas\db.bolt --interval 2s -- cmd\powershell.exe -Command "Start-Sleep 10"
+```
+
+Metrics are exposed on `:9911/metrics`; expect `diffkeeper_agent_info{os="windows",capture_backend="fsnotify"}`.
+
+## Option 4: Kubernetes Deployment
 
 Apply the example StatefulSet:
 
