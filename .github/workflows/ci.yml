@@ -20,8 +20,7 @@ jobs:
         id: buildx
       - run: make build-ebpf
       - run: make build
-      - run: go test ./... -v
-      - run: go test -tags integration ./... -v
+      - run: go test -tags integration -v -timeout 30m ./...
       - name: Demo smoke test
         shell: bash
         run: |
