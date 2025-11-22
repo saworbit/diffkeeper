@@ -512,17 +512,20 @@ func (dk *DiffKeeper) Close() error {
 		dk.cancelMon()
 	}
 
-	// Step 2: Wait for all monitoring goroutines to exit
-	// This ensures no goroutine will try to access the database after we close it
-	dk.wg.Wait()
-
-	// Step 3: Close resources (safe because all goroutines have exited)
+	// Step 2: Close resources to unblock goroutines
+	// This must be done before waiting on the WaitGroup
 	if dk.watcher != nil {
 		dk.watcher.Close()
 	}
 	if dk.ebpfMgr != nil {
 		dk.ebpfMgr.Close()
 	}
+
+	// Step 3: Wait for all monitoring goroutines to exit
+	// This ensures no goroutine will try to access the database after we close it
+	dk.wg.Wait()
+
+	// Step 4: Close the database (safe because all goroutines have exited)
 	if dk.db != nil {
 		err := dk.db.Close()
 		metrics.SetUp(false)
