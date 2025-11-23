@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DiffKeeper + Nginx</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+    code { background: #f3f3f3; padding: 2px 4px; }
+  </style>
+</head>
+<body>
+  <h1>DiffKeeper protects this Nginx cache</h1>
+  <p>
+    Edit this page inside the container, kill the process with <code>docker kill -s KILL</code>,
+    and watch DiffKeeper restore <code>/data</code> on restart.
+  </p>
+  <p>
+    Try hitting <code>/cache-test/</code> to warm the on-disk cache, then kill Nginx and reload to see
+    the cached response survive.
+  </p>
+</body>
+</html>

@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  redis:
+    build:
+      context: ../..
+      dockerfile: demo/redis-survive-kill9/Dockerfile
+    ports:
+      - "6379:6379"
+      - "9913:9911"
+    volumes:
+      - redis_deltas:/deltas
+    restart: unless-stopped
+
+  writer:
+    image: redis:7.4-alpine
+    depends_on:
+      - redis
+    command: >
+      sh -c "while true; do redis-cli -h redis INCR counter; sleep 1; done"
+    restart: unless-stopped
+
+volumes:
+  redis_deltas:

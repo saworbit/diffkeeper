@@ -27,6 +27,7 @@ Metrics: `http://localhost:9911/metrics` (look for `diffkeeper_recovery_total` a
 Even after repeated kill -9 cycles, the count keeps growing. Works on Linux, Mac, and Windows (Docker Desktop or WSL).
 
 Loom video: https://loom.com/share/xxx (record after merge).
+Demo media plan (GIF + video): see `demo/DEMO_MEDIA_PLAN.md`.
 
 Now go read the rest if you want to know how it works.
 
@@ -46,13 +47,20 @@ DiffKeeper is a small Go agent that lets stateful containers restart instantly w
 
 ## Where to run it
 
-- **Docker:** start with `demo/postgres-survive-kill9` for the out-of-the-box experience. More demos will land under `demo/` (Redis, Kubernetes kind cluster, etc.).
+- **Docker:** start with `demo/postgres-survive-kill9` for the out-of-the-box experience. Fresh samples:
+  - Redis crash loop: `demo/redis-survive-kill9` (`docker compose up -d --build`, run `./chaos.sh`)
+  - Nginx cache + static assets: `demo/nginx-cache-persist` (`docker compose up -d --build`)
+  - Minecraft world survival: `demo/minecraft-survive-kill9` (`docker compose up -d --build`, connect to `localhost:25565`)
 - **Kubernetes & Helm:** manifests and charts live under [`k8s/`](k8s/README.md). Example:
   ```bash
   kubectl apply -f k8s/rbac.yaml
   helm install diffkeeper k8s/helm/diffkeeper --namespace diffkeeper --create-namespace
   ```
 - **CLI and libraries:** see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) and [QUICKSTART.MD](QUICKSTART.MD) for command-line flags, ebpf options, and integration notes.
+
+## Architecture in one page
+
+See `docs/architecture.md` for the capture + replay flow, storage layout, and deployment patterns (wrapper, sidecar, init).
 
 ## Native Windows support
 
@@ -69,10 +77,11 @@ Great for local LLM fine-tuning, game servers, ML checkpoints, and Docker Deskto
 
 ## More docs
 
-- Architecture deep dive: [docs/](docs)
+- Architecture: `docs/architecture.md`
 - Kubernetes guide: [k8s/README.md](k8s/README.md)
 - Security: [SECURITY.md](SECURITY.md)
 - Release notes: [RELEASE_NOTES.md](RELEASE_NOTES.md)
+- Contributing: `CONTRIBUTING.md`
 
 ## License
 
