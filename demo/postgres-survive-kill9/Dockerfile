@@ -15,5 +15,6 @@ ENTRYPOINT ["diffkeeper", \
   "--snapshot-interval=15", \
   "--compression=zstd", \
   "--metrics-addr=:9911", \
+  "--", \
   "docker-entrypoint.sh"]
 CMD ["postgres"]

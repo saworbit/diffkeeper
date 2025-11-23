@@ -12,7 +12,7 @@ services:
       POSTGRES_DB: bench
 
   loader:
-    image: postgres:16
+    image: postgres:16-alpine
     restart: unless-stopped
     depends_on:
       - postgres
@@ -20,12 +20,17 @@ services:
       PGHOST: postgres
       PGUSER: postgres
       PGPASSWORD: postgres
+      PGDATABASE: bench
+    entrypoint: /bin/sh
     command: >
-      sh -c "
-        createdb bench || true;
-        pgbench -i bench || true;
+      -c "
+        set -e;
+        apk add --no-cache postgresql-client postgresql-contrib;
+        until pg_isready -h "$PGHOST" -U "$PGUSER"; do sleep 1; done;
+        createdb "$PGDATABASE" || true;
+        pgbench -i "$PGDATABASE" || true;
         while true; do
-          pgbench -c 4 -j 2 -t 1000 bench || true;
+          pgbench -c 4 -j 2 -t 1000 "$PGDATABASE" || true;
           sleep 0.5;
         done
       "
