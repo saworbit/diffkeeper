@@ -27,7 +27,7 @@ services:
       -c "
         set -euo pipefail;
         apt-get update -qq;
-        apt-get install -y -qq postgresql-client postgresql-contrib;
+        apt-get install -y -qq postgresql-client postgresql-contrib curl;
         until pg_isready -h "$$PGHOST" -U "$$PGUSER"; do sleep 1; done;
         createdb "$$PGDATABASE" || true;
         if ! psql -h "$$PGHOST" -U "$$PGUSER" -d "$$PGDATABASE" -tAc \"SELECT 1 FROM pg_tables WHERE tablename='pgbench_accounts'\" | grep -q 1; then

@@ -40,7 +40,7 @@ wait_pgbench_tables() {
 wait_metrics() {
   echo "Waiting for metrics endpoint..."
   for _ in {1..120}; do
-    if curl -sf http://localhost:9911/metrics | grep -q diffkeeper_recovery_total; then
+    if docker compose exec -T loader curl -sf http://postgres:9911/metrics | grep -q diffkeeper_recovery_total; then
       return
     fi
     sleep 2
