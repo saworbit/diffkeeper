@@ -6,6 +6,7 @@ services:
       - "5432:5432"
       - "9911:9911"
     volumes:
+      - pgdata:/var/lib/postgresql/data
       - deltas:/deltas
     environment:
       POSTGRES_PASSWORD: postgres
@@ -39,4 +40,5 @@ services:
       "
 
 volumes:
+  pgdata:
   deltas:
