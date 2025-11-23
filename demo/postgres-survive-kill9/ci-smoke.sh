@@ -37,9 +37,22 @@ wait_pgbench_tables() {
   exit 1
 }
 
+wait_metrics() {
+  echo "Waiting for metrics endpoint..."
+  for _ in {1..120}; do
+    if curl -sf http://localhost:9911/metrics | grep -q diffkeeper_recovery_total; then
+      return
+    fi
+    sleep 2
+  done
+  echo "Metrics endpoint did not respond with diffkeeper_recovery_total" >&2
+  exit 1
+}
+
 docker compose up -d
 wait_pg
 wait_pgbench_tables
+wait_metrics
 
 baseline=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
 echo "Baseline transactions: ${baseline}"
@@ -50,6 +63,7 @@ echo "Waiting for Postgres to restart..."
 docker compose up -d --force-recreate postgres >/dev/null 2>&1
 wait_pg
 wait_pgbench_tables
+wait_metrics
 
 after=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
 echo "Post-restart transactions: ${after}"
@@ -58,5 +72,4 @@ if (( after < baseline )); then
   exit 1
 fi
 
-curl -sf http://localhost:9911/metrics | grep diffkeeper_recovery_total
 echo "CI smoke test: PASS"
