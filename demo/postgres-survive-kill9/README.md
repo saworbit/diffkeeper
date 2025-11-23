@@ -36,6 +36,17 @@ For the scripted check that kills Postgres once and asserts the counter never dr
 ./ci-smoke.sh
 ```
 
+If you need an inline CI snippet, mirror what `ci-smoke.sh` does (restart after SIGKILL and wait for pgbench tables):
+
+```bash
+docker compose up -d
+./ci-smoke.sh  # simplest
+# or inline:
+# docker compose kill -s KILL postgres
+# docker compose up -d --force-recreate postgres
+# ...wait for pg_isready and pgbench_history to exist...
+```
+
 You should see the transaction count increase continuously, even while the container is being killed.
 
 ## Metrics
