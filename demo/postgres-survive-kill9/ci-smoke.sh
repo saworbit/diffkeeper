@@ -25,12 +25,22 @@ if [[ "${ready}" != "1" ]]; then
   exit 1
 fi
 
+# Wait for pgbench tables to exist (loader may still be initializing)
+echo "Waiting for pgbench tables..."
+for i in {1..30}; do
+  if docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT 1 FROM pg_tables WHERE tablename='pgbench_history';" 2>/dev/null | grep -q 1; then
+    break
+  fi
+  sleep 2
+done
+
 baseline=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
 echo "Baseline transactions: ${baseline}"
 
 docker kill -s KILL "$(docker compose ps -q postgres)"
 
 echo "Waiting for Postgres to restart..."
+# Explicitly restart to avoid edge cases where manual SIGKILL bypasses restart policy
 docker compose up -d postgres >/dev/null 2>&1
 ready=0
 for i in {1..30}; do
