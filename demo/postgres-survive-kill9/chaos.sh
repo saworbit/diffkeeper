@@ -15,4 +15,6 @@ while true; do
   fi
   echo "$(date -Iseconds) Sending kill -9 to ${target}"
   docker kill -s KILL "$target" >/dev/null 2>&1 || true
+  # Ensure the container comes back up (restart policies sometimes skip manual kills)
+  docker compose up -d postgres >/dev/null 2>&1 || true
 done

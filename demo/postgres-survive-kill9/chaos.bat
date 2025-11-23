@@ -17,4 +17,6 @@ set /a delay=%RANDOM% %% 8 + 3
 timeout /t %delay% >nul
 echo %date% %time% sending kill -9 to %target%
 docker kill -s KILL %target% >nul 2>&1
+rem Ensure the container comes back up (restart policies sometimes skip manual kills)
+docker compose up -d postgres >nul 2>&1
 goto loop

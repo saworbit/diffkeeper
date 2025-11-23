@@ -13,13 +13,13 @@ docker compose up -d
 Linux/Mac:
 
 ```bash
-./chaos.sh
+./chaos.sh  # restarts the container after each kill
 ```
 
 Windows:
 
 ```bat
-chaos.bat
+chaos.bat   # restarts the container after each kill
 ```
 
 ## Verify zero data loss

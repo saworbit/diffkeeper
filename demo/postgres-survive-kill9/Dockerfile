@@ -1,6 +1,7 @@
 FROM ghcr.io/saworbit/diffkeeper:latest AS diffkeeper
 
-FROM postgres:16-alpine
+# Debian-based Postgres to match the glibc-linked agent binary
+FROM postgres:16
 
 # Pull the exact agent binary we ship so the demo matches production
 COPY --from=diffkeeper /usr/local/bin/diffkeeper /usr/local/bin/diffkeeper
@@ -13,7 +14,6 @@ ENTRYPOINT ["diffkeeper", \
   "--state-dir=/var/lib/postgresql/data", \
   "--store=/deltas/diffkeeper.bolt", \
   "--snapshot-interval=15", \
-  "--compression=zstd", \
   "--metrics-addr=:9911", \
   "--", \
   "docker-entrypoint.sh"]
