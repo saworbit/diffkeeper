@@ -23,13 +23,13 @@ Deep dive into how DiffKeeper captures, stores, and replays state so containers 
   - `cas`: Raw content-addressed blobs (diffs or chunks).
   - `cas_refs`: Reference counts keyed by file path.
   - `snapshots`: Optional periodic full snapshots for fast forward recovery.
-  - `hashes`: File path → latest root hash for quick-change detection.
+  - `hashes`: File path -> latest root hash for quick-change detection.
 - **Metrics/observability**:
   - Prometheus metrics via `internal/metrics` (capture/recovery counters, CAS size gauges, GC totals).
   - Structured logs for every restore and capture attempt.
 
 ## Lifecycle Flow
-1. **RedShift (startup)**: Read store → verify Merkle tree (if present) → reconstruct files → log recovery stats.
+1. **RedShift (startup)**: Read store -> verify Merkle tree (if present) -> reconstruct files -> log recovery stats.
 2. **Watch setup**: Start eBPF manager; if unsupported, fall back to fsnotify recursive watches.
 3. **Metrics server**: Launch HTTP handler on `--metrics-addr`.
 4. **BlueShift (steady state)**: For each write:
@@ -53,7 +53,7 @@ Deep dive into how DiffKeeper captures, stores, and replays state so containers 
 - **Backwards compatibility**: RedShift still understands legacy full-file entries to ease migrations.
 
 ## Related Docs
-- Quick start and flags: `QUICKSTART.MD`
+- Quick start and flags: `docs/quickstart.md`
 - eBPF/CO-RE + BTF cache: `docs/btf-core-guide.md`, `docs/ebpf-guide.md`
 - Kernel compatibility: `docs/supported-kernels.md`
-- Project layout: `PROJECT_STRUCTURE.md`
+- Project layout: `docs/reference/project-structure.md`

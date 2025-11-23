@@ -48,7 +48,7 @@
 
 ### 3. Phased Implementation Plan Created ✅
 
-Created [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) with:
+Created [implementation-plan.md](implementation-plan.md) with:
 - 5 phases over 4 weeks
 - 12 milestones with clear deliverables
 - Risk management and success criteria
@@ -336,8 +336,8 @@ Restore Request →
 ## Files Created
 
 **Documentation:**
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Detailed 4-week plan
-- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - This file
+- [implementation-plan.md](implementation-plan.md) - Detailed 4-week plan
+- [implementation-summary.md](implementation-summary.md) - This file
 
 **Source Code:**
 - `pkg/config/config.go` - Configuration management (112 LOC)

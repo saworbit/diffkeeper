@@ -94,8 +94,8 @@ for _, diffCID := range meta.CIDs {
 ### 📝 Documentation
 
 **New Documentation Files:**
-- `V1.0_FINAL_COMPLETE.md`: Comprehensive implementation summary
-- `RELEASE_NOTES.md`: This file
+- `docs/history/v1.0-final-complete.md`: Comprehensive implementation summary
+- `docs/releases/release-notes.md`: This file
 - Updated `README.md`: v1.0 Final status, verified benchmarks
 
 **Updated Documentation:**

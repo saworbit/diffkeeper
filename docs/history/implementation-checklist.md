@@ -180,9 +180,9 @@ Use this checklist to track your progress building the MVP.
 ### Day 7: Documentation & Examples (8 hours)  COMPLETE
 
 - [x] **Core documentation (4h)**
-  - [x] Copy `QUICKSTART.md` from artifacts
-  - [x] Copy `PROJECT_STRUCTURE.md` from artifacts
-  - [x] Copy `IMPLEMENTATION_CHECKLIST.md` from artifacts
+  - [x] Copy `docs/quickstart.md` from artifacts
+  - [x] Copy `docs/reference/project-structure.md` from artifacts
+  - [x] Copy `docs/history/implementation-checklist.md` from artifacts
   - [x] Updated README with:
     - [x] Accurate binary size (6.5MB)
     - [x] MVP limitations clearly stated
@@ -263,7 +263,7 @@ Before considering MVP complete, ensure:
 
 - [ ] **Documentation**
   - [ ] README is comprehensive
-  - [ ] QUICKSTART is accurate and tested
+- [ ] docs/quickstart.md is accurate and tested
   - [ ] API is documented
   - [ ] Examples work
 

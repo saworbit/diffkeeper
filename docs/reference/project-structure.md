@@ -7,50 +7,70 @@ Complete file layout for the v2.0 preview (eBPF monitoring + auto-injection).
 ```
 diffkeeper/
 |-- README.md
-|-- QUICKSTART.MD
-|-- PROJECT_STRUCTURE.md
-|-- IMPLEMENTATION_CHECKLIST.md
-|-- K8S_TESTING_GUIDE.md
-|-- main.go
-|-- main_test.go
+|-- LICENSE
+|-- CONTRIBUTING.md
+|-- SECURITY.md
 |-- Dockerfile
 |-- Dockerfile.postgres
+|-- Makefile
+|-- main.go
+|-- main_test.go
 |-- demo/                    # user-facing demos (start with postgres survive kill -9)
 |   |-- postgres-survive-kill9/
-|       |-- Dockerfile
-|       |-- docker-compose.yml
-|       |-- chaos.sh
-|       |-- chaos.bat
-|       |-- verify.sh
-|       |-- README.md
+|   |   |-- docker-compose.yml
+|   |   |-- chaos.sh
+|   |   |-- README.md
+|   |-- redis-survive-kill9/
+|   |-- nginx-cache-persist/
+|   |-- minecraft-survive-kill9/
 |-- demo.sh                  # legacy demo script (superseded by demo/postgres-survive-kill9)
-|-- Makefile
-|-- k8s-statefulset.yaml
-|-- go.mod
-|-- go.sum
-|-- .gitignore
-|-- coverage.out
-|-- .github/
-|   |-- workflows/
-|       |-- ci.yml
-|       |-- release-windows.yml
-|-- docs/
+|-- k8s/                     # Helm chart, manifests, troubleshooting
+|   |-- README.md
+|   |-- SMOKE_TEST.md
+|   |-- TROUBLESHOOTING.md
+|   |-- helm/
+|-- k8s-statefulset.yaml     # single-file example for quick smoke tests
+|-- docs/                    # Documentation hub (see docs/README.md)
+|   |-- README.md
+|   |-- architecture.md
 |   |-- auto-injection.md
 |   |-- btf-core-guide.md
+|   |-- ebpf-dev-setup.md
 |   |-- ebpf-guide.md
 |   |-- patents.md
+|   |-- quickstart.md
 |   |-- supported-kernels.md
+|   |-- guides/
+|   |   |-- kubernetes-testing.md
+|   |-- history/
+|   |   |-- implementation-checklist.md
+|   |   |-- implementation-plan.md
+|   |   |-- implementation-summary.md
+|   |   |-- phase3-complete.md
+|   |   |-- phase4-test-results.md
+|   |   |-- v1.0-final-complete.md
+|   |   |-- v1.0-implementation-complete.md
+|   |-- reference/
+|   |   |-- project-structure.md   # this file
+|   |-- releases/
+|   |   |-- release-notes.md
 |-- internal/
 |   |-- metrics/       # Prometheus registry, collectors, /metrics server
 |   |-- platform/      # Platform-specific helpers (LongPathname on Windows)
 |   |-- version/       # Centralized version constant for metrics/CLI
+|-- pkg/
 |-- ebpf/
 |   |-- diffkeeper.bpf.c
+|-- scripts/
+|-- bench/
 |-- bin/                # build output (gitignored)
-|   |-- diffkeeper-windows-amd64.exe
-|   |-- diffkeeper-windows-arm64.exe
+|-- release-assets/     # packaged binaries and artifacts
 |-- test-data/          # sample input fixtures
 |-- test-deltas/        # sample delta output
+|-- .github/
+|   |-- workflows/
+|       |-- ci.yml
+|       |-- release-windows.yml
 |-- .claude/            # local editor settings (ignored)
 ```
 
@@ -239,7 +259,7 @@ go run main.go --debug --state-dir=./test-data --store=./test.bolt -- cat test-d
 
 ## Next Steps for v2.1
 
-Roadmap items live in [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md). Highlights include:
+Roadmap items live in [docs/history/implementation-checklist.md](../history/implementation-checklist.md). Highlights include:
 - Expanded profiler models (multi-armed bandit + WASM hints)
 - Operator/DaemonSet for cluster-wide auto-injection
 - Pluggable storage backends and remote sinks

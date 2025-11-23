@@ -29,7 +29,7 @@ Please run `gofmt -w` (or `go fmt ./...`) before sending a PR. If you modify Doc
 - Add tests for new behavior and regression coverage for bug fixes.
 - Keep log messages actionable (what failed, what path, next step).
 - Default to eBPF-first behavior but keep fsnotify parity; avoid regressions on Windows.
-- Document new flags, env vars, and metrics in `QUICKSTART.MD` or relevant docs.
+- Document new flags, env vars, and metrics in `docs/quickstart.md` or relevant docs.
 
 ## Pull Request Checklist
 - [ ] Tests pass: `go test ./...`
@@ -45,9 +45,9 @@ Create a GitHub issue with:
 - Relevant logs (`--debug` output) and metrics (`diffkeeper_*`)
 
 ## Where to Help
-- Open items and roadmap: `IMPLEMENTATION_CHECKLIST.md`
+- Open items and roadmap: `docs/history/implementation-checklist.md`
 - Architecture: `docs/architecture.md`
-- Kubernetes: `k8s/` and `K8S_TESTING_GUIDE.md`
+- Kubernetes: `k8s/` and `docs/guides/kubernetes-testing.md`
 - Demos/examples: `demo/`
 
 ## Communication

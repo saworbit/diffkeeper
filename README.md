@@ -57,7 +57,7 @@ DiffKeeper is a small Go agent that lets stateful containers restart instantly w
   helm install diffkeeper k8s/helm/diffkeeper --namespace diffkeeper --create-namespace
   ```
 - Kubernetes smoke test: see `k8s/SMOKE_TEST.md` (uses `ghcr.io/saworbit/diffkeeper:latest`, sidecar `--no-exec`)
-- **CLI and libraries:** see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) and [QUICKSTART.MD](QUICKSTART.MD) for command-line flags, ebpf options, and integration notes.
+- **CLI and libraries:** see [docs/reference/project-structure.md](docs/reference/project-structure.md) and [docs/quickstart.md](docs/quickstart.md) for command-line flags, ebpf options, and integration notes.
 
 ## Architecture in one page
 
@@ -78,10 +78,11 @@ Great for local LLM fine-tuning, game servers, ML checkpoints, and Docker Deskto
 
 ## More docs
 
+- Docs index: [docs/README.md](docs/README.md)
 - Architecture: `docs/architecture.md`
 - Kubernetes guide: [k8s/README.md](k8s/README.md)
 - Security: [SECURITY.md](SECURITY.md)
-- Release notes: [RELEASE_NOTES.md](RELEASE_NOTES.md)
+- Release notes: [docs/releases/release-notes.md](docs/releases/release-notes.md)
 - Contributing: `CONTRIBUTING.md`
 
 ## License

@@ -376,7 +376,7 @@ From testing:
 
 After successful testing:
 
-1. Update [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) to mark K8s testing complete
+1. Update [docs/history/implementation-checklist.md](../history/implementation-checklist.md) to mark K8s testing complete
 2. Document any issues or improvements needed
 3. Consider testing with other workloads (Redis, MongoDB, etc.)
 4. Explore multi-replica scenarios
