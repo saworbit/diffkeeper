@@ -26,6 +26,7 @@ chaos.bat   # restarts the container after each kill
 
 ```bash
 ./verify.sh
+```
 
 ## CI smoke test (one-shot)
 
@@ -33,7 +34,6 @@ For the scripted check that kills Postgres once and asserts the counter never dr
 
 ```bash
 ./ci-smoke.sh
-```
 ```
 
 You should see the transaction count increase continuously, even while the container is being killed.
