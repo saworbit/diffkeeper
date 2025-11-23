@@ -24,6 +24,8 @@ spec:
           args:
             - "--state-dir={{ .Values.stateDir }}"
             - "--store={{ .Values.storePath }}"
+            - "--enable-ebpf=true"
+            - "--fallback-fsnotify=true"
             - "--"
             - "/bin/true"
           securityContext:
@@ -48,8 +50,14 @@ spec:
             - "--state-dir={{ .Values.stateDir }}"
             - "--store={{ .Values.storePath }}"
             - "--btf-cache-dir={{ .Values.btfCacheDir }}"
+            - "--enable-ebpf=true"
+            - "--fallback-fsnotify=true"
+            {{- if .Values.noExec }}
+            - "--no-exec"
+            {{- else }}
             - "--"
             - "/pause"
+            {{- end }}
           securityContext:
             privileged: true
           resources:
@@ -65,7 +73,8 @@ spec:
         - name: state
           emptyDir: {}
         - name: store
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: {{- if .Values.storePVC.existingClaim }} {{ .Values.storePVC.existingClaim }} {{- else }} {{ .Values.storePVC.name }} {{- end }}
         - name: btf-cache
           emptyDir: {}
       nodeSelector:

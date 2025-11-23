@@ -22,7 +22,8 @@ spec:
           args:
             - "--state-dir=/state"
             - "--store=/var/lib/diffkeeper/store.bolt"
-            - "--fallback-fsnotify=false"
+            - "--enable-ebpf=true"
+            - "--fallback-fsnotify=true"
             - "--"
             - "/bin/true"
           volumeMounts:
@@ -38,13 +39,14 @@ spec:
               mountPath: /usr/share/nginx/html
         - name: diffkeeper-agent
           image: ghcr.io/saworbit/diffkeeper:latest
+          imagePullPolicy: IfNotPresent
           args:
             - "--state-dir=/state"
             - "--store=/var/lib/diffkeeper/store.bolt"
             - "--enable-ebpf=true"
+            - "--fallback-fsnotify=true"
             - "--btf-cache-dir=/var/cache/diffkeeper/btf"
-            - "--"
-            - "/pause"
+            - "--no-exec"
           securityContext:
             privileged: true
             runAsUser: 0
@@ -57,8 +59,22 @@ spec:
               mountPath: /var/cache/diffkeeper/btf
       volumes:
         - name: diffkeeper-state
-          emptyDir: {}
+          emptyDir: {} # stateless workload restored from deltas
         - name: diffkeeper-store
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: diffkeeper-store
         - name: diffkeeper-btf
           emptyDir: {}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: diffkeeper-store
+  namespace: diffkeeper
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

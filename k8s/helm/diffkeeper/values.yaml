@@ -12,6 +12,19 @@ stateDir: /state
 storePath: /var/lib/diffkeeper/store.bolt
 btfCacheDir: /var/cache/diffkeeper/btf
 
+# Persistent volume for the delta store (PVC by default, mirrors sample manifest)
+storePVC:
+  create: true
+  name: diffkeeper-store
+  existingClaim: ""        # if set, use this PVC name instead of creating one
+  storageClassName: ""     # set if your cluster requires a specific StorageClass
+  size: 1Gi
+  accessModes:
+    - ReadWriteOnce
+
+# Run the agent as a long-lived sidecar (no exec) by default for Kubernetes
+noExec: true
+
 resources:
   limits:
     cpu: 250m

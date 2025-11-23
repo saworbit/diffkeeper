@@ -2,5 +2,5 @@ apiVersion: v2
 name: diffkeeper
 description: Lightweight state recovery agent with eBPF sidecar
 type: application
-version: 0.2.0
+version: 0.2.2
 appVersion: 2.0.0

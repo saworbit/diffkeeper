@@ -1,0 +1,18 @@
+{{- if and .Values.storePVC.create (not .Values.storePVC.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.storePVC.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: diffkeeper
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes: {{- toYaml .Values.storePVC.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.storePVC.size }}
+  {{- if .Values.storePVC.storageClassName }}
+  storageClassName: {{ .Values.storePVC.storageClassName }}
+  {{- end }}
+{{- end }}

@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -832,6 +833,9 @@ func main() {
 		btfCacheDir        string
 		btfHubMirror       string
 		disableBTFDownload bool
+
+		// Daemon mode
+		noExec bool
 	)
 
 	rootCmd := &cobra.Command{
@@ -846,7 +850,14 @@ Binary Diffs (v1.0):
 Example:
   diffkeeper --state-dir=/data --store=/deltas/db.bolt -- postgres -D /data
   diffkeeper --enable-diff --chunk-size=8 --state-dir=/data -- myapp`,
-		Args: cobra.MinimumNArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			// Allow zero args when running in daemon/no-exec mode
+			noExecFlag, _ := cmd.Flags().GetBool("no-exec")
+			if noExecFlag {
+				return nil
+			}
+			return cobra.MinimumNArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if debugEnabled {
 				log.Println("[Debug] Verbose logging enabled")
@@ -919,6 +930,9 @@ Example:
 			if cmd.Flags().Changed("disable-btfhub-download") {
 				cfg.EBPF.BTF.AllowDownload = !disableBTFDownload
 			}
+			if cmd.Flags().Changed("no-exec") {
+				noExec = true
+			}
 
 			// Validate configuration
 			if err := cfg.Validate(); err != nil {
@@ -940,7 +954,10 @@ Example:
 			}
 			defer dk.Close()
 
-			metricsCtx, metricsCancel := context.WithCancel(context.Background())
+			signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
+			metricsCtx, metricsCancel := context.WithCancel(signalCtx)
 			defer metricsCancel()
 			go func() {
 				defer metrics.SetUp(false)
@@ -955,14 +972,20 @@ Example:
 			}
 
 			// Phase 2: Start monitoring (eBPF or fsnotify) in background
-			monitorCtx, monitorCancel := context.WithCancel(context.Background())
+			monitorCtx, monitorCancel := context.WithCancel(signalCtx)
 			defer monitorCancel()
 
 			if err := dk.StartMonitoring(monitorCtx); err != nil {
 				return fmt.Errorf("monitor initialization failed: %w", err)
 			}
 
-			// Phase 3: Execute the wrapped application
+			// Phase 3: Either run as daemon or exec the wrapped application
+			if noExec {
+				log.Printf("[Exec] Running in no-exec mode (sidecar/daemon); waiting for termination signal")
+				<-signalCtx.Done()
+				return nil
+			}
+
 			log.Printf("[Exec] Starting application: %v", args)
 
 			binary, err := exec.LookPath(args[0])
@@ -1006,6 +1029,7 @@ Example:
 	rootCmd.Flags().StringVar(&btfCacheDir, "btf-cache-dir", "/var/cache/diffkeeper/btf", "Directory for cached BTF specs used during CO-RE relocations")
 	rootCmd.Flags().StringVar(&btfHubMirror, "btfhub-mirror", "https://github.com/aquasecurity/btfhub-archive/raw/main", "Base URL for BTFHub-Archive downloads (override for private mirrors)")
 	rootCmd.Flags().BoolVar(&disableBTFDownload, "disable-btfhub-download", false, "Disable automatic BTFHub downloads (requires kernel-provided BTF)")
+	rootCmd.Flags().BoolVar(&noExec, "no-exec", false, "Run as a long-lived daemon/sidecar without execing a target command")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
