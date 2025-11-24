@@ -58,18 +58,24 @@ wait_pg
 wait_pgbench_tables
 wait_metrics || true
 
-baseline=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
-echo "Baseline transactions: ${baseline}"
-
 get_count() {
   docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null | tr -d '\r'
 }
 
-# Give the workload a moment to settle and flush durable state
+# Let the workload run for a bit
+sleep 5
+
+# Pause the loader to stop new transactions during kill sequence
+echo "Pausing loader..."
+docker compose pause loader
+
+# Give any in-flight transactions a moment to complete
 sleep 2
+
+# Issue CHECKPOINT to flush WAL
 docker compose exec -T postgres psql -U postgres -d bench -c "CHECKPOINT;" >/dev/null
 
-# Re-read after checkpoint to ensure a stable baseline
+# Get the stable baseline after checkpoint with loader paused
 baseline=$(get_count)
 echo "Stable baseline transactions: ${baseline}"
 
@@ -80,6 +86,10 @@ docker compose up -d --force-recreate postgres >/dev/null 2>&1
 wait_pg
 wait_pgbench_tables
 wait_metrics || true
+
+# Unpause the loader
+echo "Resuming loader..."
+docker compose unpause loader || true
 
 after=$(get_count)
 
