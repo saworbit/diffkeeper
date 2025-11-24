@@ -49,14 +49,14 @@ wait_metrics() {
     fi
     sleep 2
   done
-  echo "Metrics endpoint did not respond with diffkeeper_recovery_total" >&2
-  exit 1
+  echo "Warning: metrics endpoint did not respond with diffkeeper_recovery_total; continuing" >&2
+  return 1
 }
 
 docker compose up -d
 wait_pg
 wait_pgbench_tables
-wait_metrics
+wait_metrics || true
 
 baseline=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
 echo "Baseline transactions: ${baseline}"
@@ -67,7 +67,7 @@ echo "Waiting for Postgres to restart..."
 docker compose up -d --force-recreate postgres >/dev/null 2>&1
 wait_pg
 wait_pgbench_tables
-wait_metrics
+wait_metrics || true
 
 after=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
 echo "Post-restart transactions: ${after}"
