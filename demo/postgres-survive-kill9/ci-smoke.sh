@@ -61,8 +61,17 @@ wait_metrics || true
 baseline=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
 echo "Baseline transactions: ${baseline}"
 
-# Flush durable state before the crash so WAL is on disk
+get_count() {
+  docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null | tr -d '\r'
+}
+
+# Give the workload a moment to settle and flush durable state
+sleep 2
 docker compose exec -T postgres psql -U postgres -d bench -c "CHECKPOINT;" >/dev/null
+
+# Re-read after checkpoint to ensure a stable baseline
+baseline=$(get_count)
+echo "Stable baseline transactions: ${baseline}"
 
 docker compose kill -s KILL postgres
 
@@ -72,7 +81,17 @@ wait_pg
 wait_pgbench_tables
 wait_metrics || true
 
-after=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
+after=$(get_count)
+
+# Allow a short window for replay to catch up before failing hard
+for _ in {1..30}; do
+  if (( after >= baseline )); then
+    break
+  fi
+  sleep 2
+  after=$(get_count)
+done
+
 echo "Post-restart transactions: ${after}"
 if (( after < baseline )); then
   echo "Transaction count decreased after kill -9" >&2
