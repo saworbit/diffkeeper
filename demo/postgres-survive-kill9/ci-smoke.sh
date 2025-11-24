@@ -61,6 +61,9 @@ wait_metrics || true
 baseline=$(docker compose exec -T postgres psql -U postgres -d bench -t -A -c "SELECT count(*) FROM pgbench_history;" 2>/dev/null || echo "0")
 echo "Baseline transactions: ${baseline}"
 
+# Flush durable state before the crash so WAL is on disk
+docker compose exec -T postgres psql -U postgres -d bench -c "CHECKPOINT;" >/dev/null
+
 docker compose kill -s KILL postgres
 
 echo "Waiting for Postgres to restart..."
