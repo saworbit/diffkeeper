@@ -140,36 +140,31 @@ func (m *kernelManager) loadObjects(opts *ebpf.CollectionOptions) error {
 }
 
 func (m *kernelManager) attachSyscallProbes() error {
-	type probeCfg struct {
-		prog    *ebpf.Program
-		symbols []string
+	// fentry attachment for write paths (enables bpf_d_path in helper)
+	probes := []*ebpf.Program{
+		m.objs.FentryVfsWrite,
+		m.objs.FentryVfsWritev,
+		m.objs.FentryVfsPwritev,
 	}
 
-	probes := []probeCfg{
-		{prog: m.objs.KprobeVfsWrite, symbols: []string{"vfs_write", "ksys_write", "__x64_sys_write"}},
-		{prog: m.objs.KprobeVfsWritev, symbols: []string{"vfs_writev", "ksys_writev", "__x64_sys_writev"}},
-		{prog: m.objs.KprobeVfsPwritev, symbols: []string{"vfs_pwritev", "ksys_pwrite64", "__x64_sys_pwrite64"}},
-	}
-
-	for _, probe := range probes {
-		if probe.prog == nil {
+	for _, prog := range probes {
+		if prog == nil {
 			continue
 		}
 
-		var attached bool
-		for _, symbol := range probe.symbols {
-			l, err := link.Kprobe(symbol, probe.prog, nil)
-			if err != nil {
-				continue
-			}
-			m.links = append(m.links, l)
-			attached = true
-			break
+		l, err := link.AttachTracing(link.TracingOptions{
+			Program: prog,
+		})
+		if err != nil {
+			// Log warning but continue; some kernels may miss certain symbols.
+			log.Printf("[eBPF] warning: failed to attach fentry %s: %v", prog.String(), err)
+			continue
 		}
+		m.links = append(m.links, l)
+	}
 
-		if !attached {
-			return fmt.Errorf("failed to attach probe (symbols=%v)", probe.symbols)
-		}
+	if len(m.links) == 0 {
+		return fmt.Errorf("failed to attach any write probes")
 	}
 
 	return nil

@@ -17,9 +17,9 @@ var diffkeeperObject []byte
 type bpfObjects struct {
 	Events           *ebpf.Map     `ebpf:"events"`
 	LifecycleEvents  *ebpf.Map     `ebpf:"lifecycle_events"`
-	KprobeVfsWrite   *ebpf.Program `ebpf:"kprobe_vfs_write"`
-	KprobeVfsWritev  *ebpf.Program `ebpf:"kprobe_vfs_writev"`
-	KprobeVfsPwritev *ebpf.Program `ebpf:"kprobe_vfs_pwritev"`
+	FentryVfsWrite   *ebpf.Program `ebpf:"fentry_vfs_write"`
+	FentryVfsWritev  *ebpf.Program `ebpf:"fentry_vfs_writev"`
+	FentryVfsPwritev *ebpf.Program `ebpf:"fentry_vfs_pwritev"`
 	HandleSchedExec  *ebpf.Program `ebpf:"handle_sched_exec"`
 }
 
@@ -34,14 +34,14 @@ func (o *bpfObjects) Close() error {
 	if o.LifecycleEvents != nil {
 		o.LifecycleEvents.Close()
 	}
-	if o.KprobeVfsWrite != nil {
-		o.KprobeVfsWrite.Close()
+	if o.FentryVfsWrite != nil {
+		o.FentryVfsWrite.Close()
 	}
-	if o.KprobeVfsWritev != nil {
-		o.KprobeVfsWritev.Close()
+	if o.FentryVfsWritev != nil {
+		o.FentryVfsWritev.Close()
 	}
-	if o.KprobeVfsPwritev != nil {
-		o.KprobeVfsPwritev.Close()
+	if o.FentryVfsPwritev != nil {
+		o.FentryVfsPwritev.Close()
 	}
 	if o.HandleSchedExec != nil {
 		o.HandleSchedExec.Close()
