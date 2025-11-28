@@ -1,5 +1,20 @@
 # DiffKeeper Release Notes
 
+## v2.1 "Timeline UX" - November 28, 2025
+
+**Status:** Preview (ready for CI adoption)
+
+### Highlights
+- **Timeline CLI:** `diffkeeper timeline` streams a chronological feed of filesystem writes with relative timestamps, so export targets are never a guess.
+- **GitHub Action:** Composite `action.yml` enables `uses: saworbit/diffkeeper@v1` with automatic artifact upload of traces on failure.
+- **Flaky Demo:** Added `demo/flaky-ci-test` and doc updates (README/quickstart) to show record ➜ timeline ➜ export in a few seconds.
+
+### Notes
+- Timeline reads Pebble metadata in read-only mode; no impact on recorded traces.
+- Action installs via release installer and runs `diffkeeper record` with sudo to attach eBPF on Linux runners.
+
+---
+
 ## v2.0 "Time Machine" - November 28, 2025
 
 **Status:** Preview (CI/CD flight recorder)

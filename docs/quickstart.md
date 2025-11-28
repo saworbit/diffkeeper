@@ -1,49 +1,42 @@
 # Quickstart
 
-This guide shows you how to use DiffKeeper to debug a "flaky" script.
+Debug a flaky script end-to-end: record, inspect the timeline, and rewind to the exact moment it broke.
 
-## 1. Installation
+## 1) Build DiffKeeper (or install via the GitHub Action)
 
 ```bash
-# Build from source (requires Go 1.23+)
+# Build from source (Go 1.23+)
 go build -o diffkeeper .
 ```
 
-## 2. The "Flaky" Application
-Create a script `flaky.sh` that simulates a bug where a file gets corrupted halfway through execution:
+CI users can skip this and reference `uses: saworbit/diffkeeper@v1` in a workflow.
+
+## 2) Run the Flaky Demo Under DiffKeeper
+The repo ships with a tiny flaky test that silently corrupts `status.log` after 2 seconds.
 
 ```bash
-#!/bin/bash
-echo "All systems operational" > status.txt
-sleep 2
-echo "CRITICAL FAILURE" > status.txt  # <--- The Bug
-sleep 1
+./diffkeeper record --state-dir=./trace -- go run ./demo/flaky-ci-test
 ```
 
-## 3. Record the Crash
-Run the script wrapped in DiffKeeper:
+The process exits with a failure after a few seconds (expected).
+
+## 3) Read the Timeline (no more guesswork)
 
 ```bash
-./diffkeeper record --state-dir=./trace -- ./flaky.sh
+./diffkeeper timeline --state-dir=./trace
+[00m:00s] WRITE    status.log (13B)
+[00m:01s] WRITE    db.lock (6B)
+[00m:02s] WRITE    status.log (22B)   <-- corruption point
 ```
 
-## 4. Time Travel
-Investigate what the file looked like before the crash (at 1 second) and after (at 3 seconds).
+Now you know the precise timestamp to rewind to.
 
-**At 1 Second:**
+## 4) Export the Crash Site
 
 ```bash
-./diffkeeper export --state-dir=./trace --out=./restore_1s --time="1s"
-cat ./restore_1s/status.txt
-# Output: All systems operational
+./diffkeeper export --state-dir=./trace --out=./restored --time="2s"
+cat ./restored/status.log
+# Output: ERROR: Connection Lost
 ```
 
-**At 3 Seconds:**
-
-```bash
-./diffkeeper export --state-dir=./trace --out=./restore_3s --time="3s"
-cat ./restore_3s/status.txt
-# Output: CRITICAL FAILURE
-```
-
-You have now successfully captured and rewound a filesystem state!
+You have successfully captured the filesystem history, located the offending write, and restored the exact failing state.
