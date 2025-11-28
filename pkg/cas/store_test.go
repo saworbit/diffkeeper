@@ -2,21 +2,19 @@ package cas
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
-	"go.etcd.io/bbolt"
+	"github.com/cockroachdb/pebble"
 )
 
-func setupTestDB(t *testing.T) (*bbolt.DB, func()) {
-	t.Helper()
+func setupTestDB(tb testing.TB) (*pebble.DB, func()) {
+	tb.Helper()
 
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
+	tmpDir := tb.TempDir()
 
-	db, err := bbolt.Open(dbPath, 0600, nil)
+	db, err := pebble.Open(tmpDir, &pebble.Options{})
 	if err != nil {
-		t.Fatalf("Failed to open test database: %v", err)
+		tb.Fatalf("Failed to open test database: %v", err)
 	}
 
 	cleanup := func() {
@@ -41,6 +39,31 @@ func mustPut(tb testing.TB, store *CASStore, data []byte) string {
 		tb.Fatalf("store.Put error: %v", err)
 	}
 	return cid
+}
+
+func TestPebbleRoundTrip(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store, err := NewCASStore(db, "sha256")
+	if err != nil {
+		t.Fatalf("NewCASStore() error = %v", err)
+	}
+
+	data := []byte("pebble-roundtrip")
+	cid, err := store.Put(data)
+	if err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+
+	read, err := store.Get(cid)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if string(read) != string(data) {
+		t.Fatalf("round trip mismatch: got %q want %q", read, data)
+	}
 }
 
 func TestNewCASStore(t *testing.T) {
@@ -337,7 +360,7 @@ func TestCASStore_GetStats(t *testing.T) {
 }
 
 func BenchmarkCASStore_Put(b *testing.B) {
-	db, cleanup := setupTestDB(&testing.T{})
+	db, cleanup := setupTestDB(b)
 	defer cleanup()
 
 	store, err := NewCASStore(db, "sha256")
@@ -355,7 +378,7 @@ func BenchmarkCASStore_Put(b *testing.B) {
 }
 
 func BenchmarkCASStore_Get(b *testing.B) {
-	db, cleanup := setupTestDB(&testing.T{})
+	db, cleanup := setupTestDB(b)
 	defer cleanup()
 
 	store, err := NewCASStore(db, "sha256")

@@ -4,24 +4,31 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/klauspost/compress/zstd"
 	"github.com/multiformats/go-multihash"
-	"go.etcd.io/bbolt"
 )
 
 const (
-	BucketCAS     = "cas"
-	BucketCASRefs = "cas_refs"
+	PrefixCAS  = "c:" // Stores compressed file chunks
+	PrefixMeta = "m:" // Stores file metadata
+	PrefixLog  = "l:" // Stores raw incoming events (The "Journal")
+)
+
+const (
+	metaRefPrefix = PrefixMeta + "ref:"
 )
 
 const compressionMagic = "DKZ1"
 
 // CASStore implements content-addressable storage
 type CASStore struct {
-	db       *bbolt.DB
+	db       *pebble.DB
 	hashAlgo string
 }
 
@@ -40,20 +47,9 @@ type CASRefCount struct {
 }
 
 // NewCASStore creates a new content-addressable storage instance
-func NewCASStore(db *bbolt.DB, hashAlgo string) (*CASStore, error) {
-	// Initialize CAS buckets
-	err := db.Update(func(tx *bbolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte(BucketCAS)); err != nil {
-			return err
-		}
-		if _, err := tx.CreateBucketIfNotExists([]byte(BucketCASRefs)); err != nil {
-			return err
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize CAS buckets: %w", err)
+func NewCASStore(db *pebble.DB, hashAlgo string) (*CASStore, error) {
+	if db == nil {
+		return nil, fmt.Errorf("pebble DB is nil")
 	}
 
 	return &CASStore{
@@ -105,12 +101,7 @@ func (c *CASStore) PutWithSize(data []byte) (string, int, error) {
 		return "", 0, fmt.Errorf("failed to compress object: %w", err)
 	}
 
-	err = c.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCAS))
-		return bucket.Put([]byte(cid), compressed)
-	})
-
-	if err != nil {
+	if err := c.db.Set(casKey(cid), compressed, pebble.Sync); err != nil {
 		return "", 0, fmt.Errorf("failed to store in CAS: %w", err)
 	}
 
@@ -142,12 +133,7 @@ func (c *CASStore) PutChunkWithHash(hash [32]byte, data []byte) (string, int, er
 		return "", 0, fmt.Errorf("failed to compress chunk: %w", err)
 	}
 
-	err = c.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCAS))
-		return bucket.Put([]byte(cid), compressed)
-	})
-
-	if err != nil {
+	if err := c.db.Set(casKey(cid), compressed, pebble.Sync); err != nil {
 		return "", 0, fmt.Errorf("failed to store chunk in CAS: %w", err)
 	}
 
@@ -162,27 +148,17 @@ func (c *CASStore) PutChunk(hash [32]byte, data []byte) (string, error) {
 
 // Get retrieves data from CAS by CID
 func (c *CASStore) Get(cid string) ([]byte, error) {
-	var data []byte
+	val, closer, err := c.db.Get(casKey(cid))
+	if errors.Is(err, pebble.ErrNotFound) {
+		return nil, fmt.Errorf("CID not found: %s", cid)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer closer.Close()
 
-	err := c.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCAS))
-		value := bucket.Get([]byte(cid))
-
-		if value == nil {
-			return fmt.Errorf("CID not found: %s", cid)
-		}
-
-		decompressed, err := decompressFromStorage(value)
-		if err != nil {
-			return fmt.Errorf("failed to decompress CID %s: %w", cid, err)
-		}
-
-		data = decompressed
-
-		return nil
-	})
-
-	return data, err
+	copied := append([]byte(nil), val...)
+	return decompressFromStorage(copied)
 }
 
 // GetChunk retrieves data using a pre-computed SHA256 hash.
@@ -192,194 +168,153 @@ func (c *CASStore) GetChunk(hash [32]byte) ([]byte, error) {
 
 // Has checks if a CID exists in CAS
 func (c *CASStore) Has(cid string) (bool, error) {
-	var exists bool
-
-	err := c.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCAS))
-		value := bucket.Get([]byte(cid))
-		exists = value != nil
-		return nil
-	})
-
-	return exists, err
+	_, closer, err := c.db.Get(casKey(cid))
+	if errors.Is(err, pebble.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	closer.Close()
+	return true, nil
 }
 
 // Delete removes a CID from CAS
 // WARNING: This should only be called after verifying no references exist
 func (c *CASStore) Delete(cid string) error {
-	return c.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCAS))
-		return bucket.Delete([]byte(cid))
-	})
+	return c.db.Delete(casKey(cid), pebble.Sync)
 }
 
 // AddReference adds a reference from a file to a CID
 func (c *CASStore) AddReference(cid, filePath string) error {
-	return c.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCASRefs))
+	key := refKey(cid)
+	refCount := CASRefCount{
+		CID:   cid,
+		Refs:  0,
+		Files: []string{},
+	}
 
-		// Get existing ref count
-		var refCount CASRefCount
-		value := bucket.Get([]byte(cid))
-
-		if value != nil {
-			if err := json.Unmarshal(value, &refCount); err != nil {
-				return fmt.Errorf("failed to unmarshal ref count: %w", err)
-			}
-		} else {
-			// Initialize new ref count
-			refCount = CASRefCount{
-				CID:   cid,
-				Refs:  0,
-				Files: []string{},
-			}
+	if val, closer, err := c.db.Get(key); err == nil {
+		defer closer.Close()
+		if err := json.Unmarshal(val, &refCount); err != nil {
+			return fmt.Errorf("failed to unmarshal ref count: %w", err)
 		}
+	} else if !errors.Is(err, pebble.ErrNotFound) {
+		return err
+	}
 
-		// Check if file already referenced
-		for _, f := range refCount.Files {
-			if f == filePath {
-				// Already referenced, no need to increment
-				return nil
-			}
+	for _, f := range refCount.Files {
+		if f == filePath {
+			return nil
 		}
+	}
 
-		// Add reference
-		refCount.Refs++
-		refCount.Files = append(refCount.Files, filePath)
+	refCount.Refs++
+	refCount.Files = append(refCount.Files, filePath)
 
-		// Store updated ref count
-		data, err := json.Marshal(refCount)
-		if err != nil {
-			return fmt.Errorf("failed to marshal ref count: %w", err)
-		}
+	data, err := json.Marshal(refCount)
+	if err != nil {
+		return fmt.Errorf("failed to marshal ref count: %w", err)
+	}
 
-		return bucket.Put([]byte(cid), data)
-	})
+	return c.db.Set(key, data, pebble.Sync)
 }
 
 // RemoveReference removes a reference from a file to a CID
 func (c *CASStore) RemoveReference(cid, filePath string) error {
-	return c.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCASRefs))
+	key := refKey(cid)
+	refCount := CASRefCount{}
 
-		// Get existing ref count
-		var refCount CASRefCount
-		value := bucket.Get([]byte(cid))
+	val, closer, err := c.db.Get(key)
+	if errors.Is(err, pebble.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer closer.Close()
 
-		if value == nil {
-			// No references exist
-			return nil
+	if err := json.Unmarshal(val, &refCount); err != nil {
+		return fmt.Errorf("failed to unmarshal ref count: %w", err)
+	}
+
+	newFiles := []string{}
+	found := false
+	for _, f := range refCount.Files {
+		if f != filePath {
+			newFiles = append(newFiles, f)
+		} else {
+			found = true
 		}
+	}
 
-		if err := json.Unmarshal(value, &refCount); err != nil {
-			return fmt.Errorf("failed to unmarshal ref count: %w", err)
-		}
+	if !found {
+		return nil
+	}
 
-		// Remove file from references
-		newFiles := []string{}
-		found := false
-		for _, f := range refCount.Files {
-			if f != filePath {
-				newFiles = append(newFiles, f)
-			} else {
-				found = true
-			}
-		}
+	refCount.Files = newFiles
+	refCount.Refs--
 
-		if !found {
-			// File wasn't referenced, nothing to do
-			return nil
-		}
+	if refCount.Refs <= 0 {
+		return c.db.Delete(key, pebble.Sync)
+	}
 
-		refCount.Files = newFiles
-		refCount.Refs--
+	data, err := json.Marshal(refCount)
+	if err != nil {
+		return fmt.Errorf("failed to marshal ref count: %w", err)
+	}
 
-		// If no more references, delete the ref count entry
-		if refCount.Refs <= 0 {
-			return bucket.Delete([]byte(cid))
-		}
-
-		// Store updated ref count
-		data, err := json.Marshal(refCount)
-		if err != nil {
-			return fmt.Errorf("failed to marshal ref count: %w", err)
-		}
-
-		return bucket.Put([]byte(cid), data)
-	})
+	return c.db.Set(key, data, pebble.Sync)
 }
 
 // GetRefCount returns the reference count for a CID
 func (c *CASStore) GetRefCount(cid string) (int, error) {
-	var count int
+	key := refKey(cid)
+	val, closer, err := c.db.Get(key)
+	if errors.Is(err, pebble.ErrNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer closer.Close()
 
-	err := c.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(BucketCASRefs))
-		value := bucket.Get([]byte(cid))
+	var refCount CASRefCount
+	if err := json.Unmarshal(val, &refCount); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal ref count: %w", err)
+	}
 
-		if value == nil {
-			count = 0
-			return nil
-		}
-
-		var refCount CASRefCount
-		if err := json.Unmarshal(value, &refCount); err != nil {
-			return fmt.Errorf("failed to unmarshal ref count: %w", err)
-		}
-
-		count = refCount.Refs
-		return nil
-	})
-
-	return count, err
+	return refCount.Refs, nil
 }
 
 // GarbageCollect removes unreferenced CAS objects
 func (c *CASStore) GarbageCollect() (int, error) {
-	var deleted int
-
-	// Get all CIDs with no references
-	var unreferencedCIDs []string
-
-	err := c.db.View(func(tx *bbolt.Tx) error {
-		casBucket := tx.Bucket([]byte(BucketCAS))
-		refsBucket := tx.Bucket([]byte(BucketCASRefs))
-
-		// Iterate all CAS objects
-		return casBucket.ForEach(func(k, v []byte) error {
-			cid := string(k)
-
-			// Check if it has references
-			refData := refsBucket.Get(k)
-			if refData == nil {
-				// No references, mark for deletion
-				unreferencedCIDs = append(unreferencedCIDs, cid)
-				return nil
-			}
-
-			var refCount CASRefCount
-			if err := json.Unmarshal(refData, &refCount); err != nil {
-				return err
-			}
-
-			if refCount.Refs <= 0 {
-				unreferencedCIDs = append(unreferencedCIDs, cid)
-			}
-
-			return nil
-		})
-	})
-
+	iter, err := newPrefixIter(c.db, PrefixCAS)
 	if err != nil {
-		return 0, fmt.Errorf("failed to collect unreferenced CIDs: %w", err)
+		return 0, err
+	}
+	defer iter.Close()
+
+	deleted := 0
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		cid := stripPrefix(iter.Key(), PrefixCAS)
+
+		refs, err := c.GetRefCount(cid)
+		if err != nil {
+			return deleted, fmt.Errorf("failed to get ref count for %s: %w", cid, err)
+		}
+
+		if refs <= 0 {
+			if err := c.db.Delete(casKey(cid), pebble.Sync); err != nil {
+				return deleted, fmt.Errorf("failed to delete CID %s: %w", cid, err)
+			}
+			deleted++
+		}
 	}
 
-	// Delete unreferenced CIDs
-	for _, cid := range unreferencedCIDs {
-		if err := c.Delete(cid); err != nil {
-			return deleted, fmt.Errorf("failed to delete CID %s: %w", cid, err)
-		}
-		deleted++
+	if err := iter.Error(); err != nil {
+		return deleted, err
 	}
 
 	return deleted, nil
@@ -398,54 +333,57 @@ type CASStats struct {
 func (c *CASStore) GetStats() (CASStats, error) {
 	var stats CASStats
 
-	err := c.db.View(func(tx *bbolt.Tx) error {
-		casBucket := tx.Bucket([]byte(BucketCAS))
-		refsBucket := tx.Bucket([]byte(BucketCASRefs))
+	referencedCIDs := make(map[string]bool)
+	fileSet := make(map[string]bool)
 
-		// Track which CIDs have references
-		referencedCIDs := make(map[string]bool)
-		fileSet := make(map[string]bool)
+	refsIter, err := newPrefixIter(c.db, metaRefPrefix)
+	if err != nil {
+		return stats, err
+	}
+	defer refsIter.Close()
 
-		// Count total references and unique files
-		if err := refsBucket.ForEach(func(k, v []byte) error {
-			var refCount CASRefCount
-			if err := json.Unmarshal(v, &refCount); err != nil {
-				return err
-			}
-
-			if refCount.Refs > 0 {
-				referencedCIDs[string(k)] = true
-				stats.TotalRefs += refCount.Refs
-				for _, f := range refCount.Files {
-					fileSet[f] = true
-				}
-			}
-
-			return nil
-		}); err != nil {
-			return err
+	for refsIter.First(); refsIter.Valid(); refsIter.Next() {
+		var refCount CASRefCount
+		if err := json.Unmarshal(refsIter.Value(), &refCount); err != nil {
+			return stats, err
 		}
 
-		stats.UniqueFiles = len(fileSet)
-
-		// Count total objects and unreferenced objects
-		if err := casBucket.ForEach(func(k, v []byte) error {
-			stats.TotalObjects++
-			stats.TotalSize += int64(len(v))
-
-			if !referencedCIDs[string(k)] {
-				stats.UnreferencedObjs++
+		if refCount.Refs > 0 {
+			referencedCIDs[refCount.CID] = true
+			stats.TotalRefs += refCount.Refs
+			for _, f := range refCount.Files {
+				fileSet[f] = true
 			}
-
-			return nil
-		}); err != nil {
-			return err
 		}
+	}
 
-		return nil
-	})
+	if err := refsIter.Error(); err != nil {
+		return stats, err
+	}
 
-	return stats, err
+	stats.UniqueFiles = len(fileSet)
+
+	casIter, err := newPrefixIter(c.db, PrefixCAS)
+	if err != nil {
+		return stats, err
+	}
+	defer casIter.Close()
+
+	for casIter.First(); casIter.Valid(); casIter.Next() {
+		stats.TotalObjects++
+		stats.TotalSize += int64(len(casIter.Value()))
+
+		cid := stripPrefix(casIter.Key(), PrefixCAS)
+		if !referencedCIDs[cid] {
+			stats.UnreferencedObjs++
+		}
+	}
+
+	if err := casIter.Error(); err != nil {
+		return stats, err
+	}
+
+	return stats, nil
 }
 
 var (
@@ -501,4 +439,26 @@ func decompressFromStorage(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return dec.DecodeAll(data[len(compressionMagic):], nil)
+}
+
+func casKey(cid string) []byte {
+	return []byte(PrefixCAS + cid)
+}
+
+func refKey(cid string) []byte {
+	return []byte(metaRefPrefix + cid)
+}
+
+func newPrefixIter(db *pebble.DB, prefix string) (*pebble.Iterator, error) {
+	upper := append([]byte(prefix), 0xff)
+	return db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte(prefix),
+		UpperBound: upper,
+	})
+}
+
+func stripPrefix(key []byte, prefix string) string {
+	// Copy to avoid iterator buffer reuse across steps
+	k := append([]byte(nil), key...)
+	return strings.TrimPrefix(string(k), prefix)
 }
