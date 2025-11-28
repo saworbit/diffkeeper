@@ -41,5 +41,9 @@ Now `cd ./debug_fs` and explore the files exactly as they existed at that moment
 - **Storage:** Pebble (LSM Tree) for high-speed ingestion.
 - **Diffing:** bsdiff (Binary patches) for efficient storage.
 
+## CI / Dogfooding
+- GitHub Actions (`.github/workflows/ci.yml`) runs unit/race tests, cross-platform builds, and a functional "time machine" test that records a flaky script and verifies exports at multiple timestamps.
+- The BoltDB era workflows are archived under `docs/archive/v1-legacy/workflows/`.
+
 ## Getting Started
 See the [Quickstart](docs/quickstart.md) to record your first trace.

@@ -1,29 +1,108 @@
 name: CI
-on: [push, pull_request]
-permissions:
-  contents: read
-  packages: write
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  build-test:
+  # 1. Standard Unit Tests & Linting
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Verify Code Formatting
+        run: if [ -n "$(gofmt -l .)" ]; then echo "Go code is not formatted"; exit 1; fi
+
+      - name: Run Unit Tests
+        # We run tests with race detection to catch concurrency bugs in the new Pebble implementation
+        run: go test -race -v ./...
+
+  # 2. Build Verification (Cross-Platform)
+  build:
+    name: Build Binary
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.23']
-        platform: [amd64, arm64]
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin  # Verify macOS build (fsnotify fallback)
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
-      - uses: docker/setup-buildx-action@v3
-        id: buildx
-      - run: make build-ebpf
-      - run: make build
-      - run: go test -tags integration -v -timeout 30m ./...
-      - name: Demo smoke test
-        shell: bash
+          go-version: '1.23'
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
         run: |
-          set -euo pipefail
-          cd demo/postgres-survive-kill9
-          ./ci-smoke.sh
+          mkdir -p bin
+          go build -o bin/diffkeeper-${{ matrix.os }}-${{ matrix.arch }} .
+
+  # 3. The "Dogfood" Test (Functional Verification)
+  # This proves the "Time Machine" feature actually works on Linux (with eBPF/Pebble)
+  functional-test:
+    name: Functional Test (The Time Machine)
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build DiffKeeper
+        run: go build -o diffkeeper .
+
+      - name: Create Flaky Script
+        # This simulates the user scenario: A script that changes a file over time
+        run: |
+          cat <<'EOF' > flaky.sh
+          #!/bin/bash
+          echo "STATE_1: START" > status.txt
+          sleep 1
+          echo "STATE_2: MIDDLE" > status.txt
+          sleep 1
+          echo "STATE_3: END" > status.txt
+          EOF
+          chmod +x flaky.sh
+
+      - name: Record Session
+        # We run as sudo to allow eBPF to attach to the kernel
+        run: |
+          sudo ./diffkeeper record --state-dir=/tmp/trace -- ./flaky.sh
+
+      - name: Verify Export (Time Travel)
+        run: |
+          # 1. Restore state at ~0.5s (Should be STATE_1)
+          sudo ./diffkeeper export --state-dir=/tmp/trace --out=/tmp/restore_1 --time="500ms"
+
+          # 2. Restore state at ~1.5s (Should be STATE_2)
+          sudo ./diffkeeper export --state-dir=/tmp/trace --out=/tmp/restore_2 --time="1500ms"
+
+          # 3. Assertions
+          echo "Checking State 1..."
+          grep "STATE_1: START" /tmp/restore_1/status.txt
+
+          echo "Checking State 2..."
+          grep "STATE_2: MIDDLE" /tmp/restore_2/status.txt
+
+          echo "✅ Time Travel Successful!"
