@@ -144,9 +144,9 @@ func (m *kernelManager) attachSyscallProbes() error {
 	probes := []*ebpf.Program{
 		m.objs.FentryVfsWrite,
 		m.objs.FentryVfsWritev,
-		m.objs.FentryVfsPwritev,
 	}
 
+	attached := 0
 	for _, prog := range probes {
 		if prog == nil {
 			continue
@@ -161,9 +161,10 @@ func (m *kernelManager) attachSyscallProbes() error {
 			continue
 		}
 		m.links = append(m.links, l)
+		attached++
 	}
 
-	if len(m.links) == 0 {
+	if attached == 0 {
 		return fmt.Errorf("failed to attach any write probes")
 	}
 

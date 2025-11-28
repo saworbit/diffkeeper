@@ -79,22 +79,6 @@ int BPF_PROG(fentry_vfs_writev, struct kiocb *iocb, struct iovec *iov,
 	return emit_syscall_event(file, total);
 }
 
-SEC("fentry/vfs_pwritev")
-int BPF_PROG(fentry_vfs_pwritev, struct file *file, struct iovec *iov,
-	     unsigned long nr_segs, loff_t *pos)
-{
-	size_t total = 0;
-
-#pragma unroll
-	for (int i = 0; i < 6; i++) {
-		if (i >= nr_segs)
-			break;
-		size_t len = BPF_CORE_READ(&iov[i], iov_len);
-		total += len;
-	}
-	return emit_syscall_event(file, total);
-}
-
 SEC("tracepoint/sched/sched_process_exec")
 int handle_sched_exec(struct trace_event_raw_sched_process_exec *ctx)
 {

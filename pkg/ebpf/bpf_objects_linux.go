@@ -15,12 +15,11 @@ var diffkeeperObject []byte
 
 // bpfObjects mirrors the maps and programs compiled into diffkeeper.bpf.o.
 type bpfObjects struct {
-	Events           *ebpf.Map     `ebpf:"events"`
-	LifecycleEvents  *ebpf.Map     `ebpf:"lifecycle_events"`
-	FentryVfsWrite   *ebpf.Program `ebpf:"fentry_vfs_write"`
-	FentryVfsWritev  *ebpf.Program `ebpf:"fentry_vfs_writev"`
-	FentryVfsPwritev *ebpf.Program `ebpf:"fentry_vfs_pwritev"`
-	HandleSchedExec  *ebpf.Program `ebpf:"handle_sched_exec"`
+	Events          *ebpf.Map     `ebpf:"events"`
+	LifecycleEvents *ebpf.Map     `ebpf:"lifecycle_events"`
+	FentryVfsWrite  *ebpf.Program `ebpf:"fentry_vfs_write"`
+	FentryVfsWritev *ebpf.Program `ebpf:"fentry_vfs_writev"`
+	HandleSchedExec *ebpf.Program `ebpf:"handle_sched_exec"`
 }
 
 func (o *bpfObjects) Close() error {
@@ -39,9 +38,6 @@ func (o *bpfObjects) Close() error {
 	}
 	if o.FentryVfsWritev != nil {
 		o.FentryVfsWritev.Close()
-	}
-	if o.FentryVfsPwritev != nil {
-		o.FentryVfsPwritev.Close()
 	}
 	if o.HandleSchedExec != nil {
 		o.HandleSchedExec.Close()
