@@ -46,12 +46,10 @@ static __always_inline int emit_syscall_event(struct file *file, size_t count)
 	ev->bytes = count;
 	__builtin_memset(ev->path, 0, sizeof(ev->path));
 
-	/* fentry context allows direct use of bpf_d_path */
-	if (bpf_d_path(&file->f_path, ev->path, sizeof(ev->path)) < 0) {
-		struct dentry *dentry = BPF_CORE_READ(file, f_path.dentry);
-		const unsigned char *name = BPF_CORE_READ(dentry, d_name.name);
-		bpf_probe_read_kernel_str(ev->path, sizeof(ev->path), name);
-	}
+	/* Portable path resolution: just capture the filename (dentry name). */
+	struct dentry *dentry = BPF_CORE_READ(file, f_path.dentry);
+	const unsigned char *name = BPF_CORE_READ(dentry, d_name.name);
+	bpf_probe_read_kernel_str(ev->path, sizeof(ev->path), name);
 
 	bpf_ringbuf_submit(ev, 0);
 	return 0;

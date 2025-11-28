@@ -4,6 +4,7 @@
 - New `timeline` command to list all file events with relative timestamps (no more guessing export times).
 - Added composite GitHub Action (`action.yml`) for one-line CI adoption: `uses: saworbit/diffkeeper@v1`.
 - Included flaky CI demo (`demo/flaky-ci-test`) and updated docs/readme/quickstart to show the full record ➜ timeline ➜ export loop.
+- eBPF write capture moved from kprobe to fentry; for portability we now record filenames via dentry names (no `bpf_d_path`), avoiding kernel helper restrictions on CI.
 
 ## v2.0 - Time Machine Preview (2025-11-28)
 - Pivoted from BoltDB persistence to Pebble-based flight recorder with key prefixes (`l:/c:/m:`).

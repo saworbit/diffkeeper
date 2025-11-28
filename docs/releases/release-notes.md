@@ -7,11 +7,13 @@
 ### Highlights
 - **Timeline CLI:** `diffkeeper timeline` streams a chronological feed of filesystem writes with relative timestamps, so export targets are never a guess.
 - **GitHub Action:** Composite `action.yml` enables `uses: saworbit/diffkeeper@v1` with automatic artifact upload of traces on failure.
-- **Flaky Demo:** Added `demo/flaky-ci-test` and doc updates (README/quickstart) to show record ➜ timeline ➜ export in a few seconds.
+- **Flaky Demo:** Added `demo/flaky-ci-test` and doc updates (README/quickstart) to show record -> timeline -> export in a few seconds.
+- **eBPF Fix:** Write probes moved from kprobe to fentry and now record filenames via dentry names (no `bpf_d_path`), eliminating "invalid argument" verifier errors on CI kernels.
 
 ### Notes
 - Timeline reads Pebble metadata in read-only mode; no impact on recorded traces.
 - Action installs via release installer and runs `diffkeeper record` with sudo to attach eBPF on Linux runners.
+- fentry requires BTF; falls back to fsnotify when unavailable.
 
 ---
 
@@ -81,7 +83,7 @@
 
 **2. Diff Chain Accumulation**
 - Diffs now accumulate all patches since last snapshot
-- Example: Version 5 stores [diff1→2, diff2→3, diff3→4, diff4→5]
+- Example: Version 5 stores [diff1->2, diff2->3, diff3->4, diff4->5]
 - Enables proper reconstruction from base + complete chain
 
 **3. Proper reconstructFile() Implementation**
@@ -170,7 +172,7 @@ for _, diffCID := range meta.CIDs {
 - [ ] Production testing (Docker + Kubernetes)
 - [ ] Real ML checkpoint workload (PyTorch/TensorFlow)
 - [ ] Kubernetes StatefulSet manifests
-- [ ] Migration guide (MVP → v1.0)
+- [ ] Migration guide (MVP -> v1.0)
 - [ ] Official Docker image
 
 ### Installation
@@ -212,7 +214,7 @@ go build -o diffkeeper .
 - Merkle tree integrity verification
 - Large file chunking (>1GB)
 - Content deduplication
-- Schema migration (MVP → v1.0)
+- Schema migration (MVP -> v1.0)
 - 70 tests passing
 
 ### Known Issues (Resolved in v1.0 Final)
@@ -246,7 +248,7 @@ go build -o diffkeeper .
 **Automatic Schema Migration:**
 1. Set `--enable-diff=true` flag
 2. Agent detects MVP schema and migrates
-3. Existing compressed files → CAS snapshots
+3. Existing compressed files -> CAS snapshots
 4. Merkle trees generated for integrity
 
 **Migration Log:**
