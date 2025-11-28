@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ func newRootCmd() *cobra.Command {
 		Version: version.Version,
 	}
 
-	root.AddCommand(newRecordCmd(), newExportCmd())
+	root.AddCommand(newRecordCmd(), newExportCmd(), newTimelineCmd())
 	return root
 }
 
@@ -89,6 +90,24 @@ func newExportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&stateDir, "state-dir", "", "Directory where Pebble state is stored")
 	cmd.Flags().StringVar(&outDir, "out", "", "Destination directory for restored files")
 	cmd.Flags().StringVar(&atTime, "time", "latest", "Timestamp or duration (e.g. 2s, 2025-01-02T15:04:05Z)")
+	return cmd
+}
+
+func newTimelineCmd() *cobra.Command {
+	var stateDir string
+
+	cmd := &cobra.Command{
+		Use:   "timeline",
+		Short: "Show the history of filesystem changes",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if stateDir == "" {
+				return fmt.Errorf("state-dir is required")
+			}
+			return runTimeline(stateDir)
+		},
+	}
+
+	cmd.Flags().StringVar(&stateDir, "state-dir", "", "Directory where Pebble state is stored")
 	return cmd
 }
 
@@ -203,6 +222,85 @@ func runExport(stateDir, outDir, atTime string) error {
 		if err := os.WriteFile(dest, data, 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
+	}
+
+	return nil
+}
+
+func runTimeline(stateDir string) error {
+	db, err := pebble.Open(stateDir, &pebble.Options{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("open pebble: %w", err)
+	}
+	defer db.Close()
+
+	sessionStart := loadSessionStart(db)
+	if sessionStart.IsZero() {
+		return fmt.Errorf("no session start time found in state")
+	}
+
+	iter, err := newPrefixIter(db, cas.PrefixMeta)
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+
+	fmt.Printf("Session Start: %s\n", sessionStart.Format(time.RFC3339))
+	fmt.Println("TIME       OP       PATH")
+	fmt.Println("------------------------------------------------")
+
+	type Event struct {
+		TS   time.Time
+		Path string
+		Op   string
+		Size int
+	}
+
+	var events []Event
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		key := string(iter.Key())
+		if key == sessionMetaKey {
+			continue
+		}
+
+		val := append([]byte(nil), iter.Value()...)
+		var meta recorder.MetadataRecord
+		if err := json.Unmarshal(val, &meta); err != nil {
+			log.Printf("[timeline] skip corrupt metadata %q: %v", key, err)
+			continue
+		}
+
+		events = append(events, Event{
+			TS:   time.Unix(0, meta.Timestamp),
+			Path: meta.Path,
+			Op:   meta.Op,
+			Size: meta.Size,
+		})
+	}
+
+	if err := iter.Error(); err != nil {
+		return err
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].TS.Before(events[j].TS)
+	})
+
+	for _, e := range events {
+		duration := e.TS.Sub(sessionStart)
+		if duration < 0 {
+			duration = 0
+		}
+
+		fmt.Printf(
+			"[%02dm:%02ds] %-8s %s (%s)\n",
+			int(duration.Minutes()),
+			int(duration.Seconds())%60,
+			strings.ToUpper(e.Op),
+			e.Path,
+			formatSize(e.Size),
+		)
 	}
 
 	return nil
@@ -390,4 +488,14 @@ func cleanPath(path string) string {
 		return "root"
 	}
 	return clean
+}
+
+func formatSize(size int) string {
+	if size >= 1<<20 {
+		return fmt.Sprintf("%.1fMB", float64(size)/(1<<20))
+	}
+	if size >= 1<<10 {
+		return fmt.Sprintf("%.1fKB", float64(size)/(1<<10))
+	}
+	return fmt.Sprintf("%dB", size)
 }

@@ -1,0 +1,30 @@
+name: DiffKeeper Flight Recorder
+description: Record filesystem changes during CI steps for debugging flaky tests
+inputs:
+  command:
+    description: The command to run and record
+    required: true
+  state-dir:
+    description: Directory to store the trace
+    default: diffkeeper-trace
+runs:
+  using: composite
+  steps:
+    - name: Install DiffKeeper
+      shell: bash
+      run: |
+        curl -sfL https://github.com/saworbit/diffkeeper/releases/latest/download/install.sh | sh
+        sudo cp ./bin/diffkeeper /usr/local/bin/
+
+    - name: Record
+      shell: bash
+      run: |
+        # Run with sudo to allow eBPF attachment
+        sudo diffkeeper record --state-dir="${{ inputs.state-dir }}" -- ${{ inputs.command }}
+
+    - name: Upload Trace (On Failure)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: diffkeeper-trace
+        path: ${{ inputs.state-dir }}
