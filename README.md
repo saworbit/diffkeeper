@@ -1,92 +1,45 @@
-﻿# DiffKeeper: State-Aware Containers
-
-Stateful containers that survive kill -9. Zero data loss. <100ms recovery.
+# DiffKeeper: The Kubernetes Time Machine
 
 [![CI](https://github.com/saworbit/diffkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/saworbit/diffkeeper/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/saworbit/diffkeeper)](https://goreportcard.com/report/github.com/saworbit/diffkeeper)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Status: v2.0 Preview](https://img.shields.io/badge/Status-v2.0%20Preview-blue.svg)]()
 
-## 60-Second Demo (start here)
+**DiffKeeper is a "Black Box Flight Recorder" for your containers.**
 
-```bash
-git clone https://github.com/saworbit/diffkeeper.git
-cd diffkeeper/demo/postgres-survive-kill9
-docker compose up -d          # starts Postgres with DiffKeeper baked in
-./chaos.sh                    # randomly kills the container every few seconds
-```
+It watches your application's filesystem in real-time and records every change. When a container crashes—or a CI test flakes—you can rewind the state to any exact moment in time to see exactly what happened.
 
-Open another terminal and watch the transaction count never reset:
-
-```bash
-watch -n 1 'docker compose exec -T postgres psql -U postgres -d bench -c "SELECT count(*) FROM pgbench_history;"'
-```
-
-Metrics: `http://localhost:9911/metrics` (look for `diffkeeper_recovery_total` and `diffkeeper_delta_count`).
-
-Even after repeated kill -9 cycles, the count keeps growing. Works on Linux, Mac, and Windows (Docker Desktop or WSL).
-
-Loom video: https://loom.com/share/xxx (record after merge).
-Demo media plan (GIF + video): see `demo/DEMO_MEDIA_PLAN.md`.
-
-Now go read the rest if you want to know how it works.
+> **Note:** This project previously focused on "Stateful Containers" and database persistence. That architecture has been archived. See [Genesis & Pivot](docs/GENESIS_AND_PIVOT.md) for the story.
 
 ---
 
-## What is DiffKeeper?
+## The Problem: "Why did that test fail?"
+You have a flaky test in CI. It fails 1 out of 50 times. You re-run the job, and it passes. You have no idea why.
+* Logs only show you *what* the application printed.
+* They don't show you that a config file was corrupted, a temp file was locked, or a binary was overwritten.
 
-DiffKeeper is a small Go agent that lets stateful containers restart instantly without losing data. It captures file-level changes as content-addressed deltas and replays them on restart.
+## The Solution: Instant Replay
+DiffKeeper uses eBPF to capture filesystem writes at line-rate and stores them in a high-speed log (Pebble).
 
-## How it works (high level)
+### 1. Record a Session
+Wrap your flaky test (or command) with `diffkeeper record`. It adds minimal overhead.
 
-1. Intercepts writes via eBPF (fsnotify fallback on unsupported kernels).
-2. Captures binary diffs instead of full snapshots.
-3. Stores deduplicated deltas in a BoltDB-backed store.
-4. Verifies integrity with Merkle trees.
-5. Replays changes on restart for sub-100ms recovery.
-
-## Where to run it
-
-- **Docker:** start with `demo/postgres-survive-kill9` for the out-of-the-box experience. Fresh samples:
-  - Redis crash loop: `demo/redis-survive-kill9` (`docker compose up -d --build`, run `./chaos.sh`)
-  - Nginx cache + static assets: `demo/nginx-cache-persist` (`docker compose up -d --build`)
-  - Minecraft world survival: `demo/minecraft-survive-kill9` (`docker compose up -d --build`, connect to `localhost:25565`)
-- **Kubernetes & Helm:** manifests and charts live under [`k8s/`](k8s/README.md). Example:
-  ```bash
-  kubectl apply -f k8s/rbac.yaml
-  helm install diffkeeper k8s/helm/diffkeeper --namespace diffkeeper --create-namespace
-  ```
-- Kubernetes smoke test: see `k8s/SMOKE_TEST.md` (uses `ghcr.io/saworbit/diffkeeper:latest`, sidecar `--no-exec`)
-- **CLI and libraries:** see [docs/reference/project-structure.md](docs/reference/project-structure.md) and [docs/quickstart.md](docs/quickstart.md) for command-line flags, ebpf options, and integration notes.
-
-## Architecture in one page
-
-See `docs/architecture.md` for the capture + replay flow, storage layout, and deployment patterns (wrapper, sidecar, init).
-
-## Native Windows support
-
-DiffKeeper ships a zero-dependency Windows executable.
-
-```powershell
-scoop bucket add saworbit https://github.com/saworbit/scoop-bucket
-scoop install diffkeeper
-# Or download directly
-iwr https://github.com/saworbit/diffkeeper/releases/download/v1.2.0/diffkeeper-windows-amd64.exe -OutFile diffkeeper.exe
+```bash
+# In your local terminal or CI pipeline
+diffkeeper record --state-dir=/tmp/trace -- go test ./...
 ```
 
-Great for local LLM fine-tuning, game servers, ML checkpoints, and Docker Desktop usage without WSL.
+### 2. Export the "Crash Site"
+The test failed! But the container is gone. No problem—DiffKeeper saved the history. Restore the filesystem to exactly 2 minutes and 14 seconds into the run:
 
-## More docs
+```bash
+diffkeeper export --state-dir=/tmp/trace --out=./debug_fs --time="2m14s"
+```
 
-- Docs index: [docs/README.md](docs/README.md)
-- Architecture: `docs/architecture.md`
-- Kubernetes guide: [k8s/README.md](k8s/README.md)
-- Security: [SECURITY.md](SECURITY.md)
-- Release notes: [docs/releases/release-notes.md](docs/releases/release-notes.md)
-- Contributing: `CONTRIBUTING.md`
+Now `cd ./debug_fs` and explore the files exactly as they existed at that moment.
 
-## License
+## Architecture
+- **Engine:** Pure Go + eBPF (CO-RE)
+- **Storage:** Pebble (LSM Tree) for high-speed ingestion.
+- **Diffing:** bsdiff (Binary patches) for efficient storage.
 
-Apache License 2.0 - see [LICENSE](LICENSE).
-
-Maintainer: Shane Anthony Wall (shaneawall@gmail.com)
+## Getting Started
+See the [Quickstart](docs/quickstart.md) to record your first trace.
